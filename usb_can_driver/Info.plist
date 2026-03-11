@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>OSBundleUsageDescription</key>
+    <string>USB CAN driver for SLCAN, gs_usb, and PCAN adapters</string>
+
+    <!-- IOKit Matching -->
+    <key>IOKitPersonalities</key>
+    <dict>
+        <!-- Match SH-C31G / CANable with slcan firmware -->
+        <key>USBCANDriver_CANable_slcan</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+            <key>IOClass</key>
+            <string>IOUserService</string>
+            <key>IOProviderClass</key>
+            <string>IOUSBHostDevice</string>
+            <key>IOUserClass</key>
+            <string>USBCANDriver</string>
+            <key>IOUserServerName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+            <!-- USB Matching: SH-C31G / CANable slcan firmware -->
+            <key>idVendor</key>
+            <integer>5840</integer>
+            <key>idProduct</key>
+            <integer>4478</integer>
+
+            <key>IOProbeScore</key>
+            <integer>90000</integer>
+
+            <key>UserClientProperties</key>
+            <dict>
+                <key>IOClass</key>
+                <string>IOUserUserClient</string>
+                <key>IOUserClass</key>
+                <string>USBCANUserClient</string>
+            </dict>
+        </dict>
+
+        <!-- Match gs_usb / candleLight firmware -->
+        <key>USBCANDriver_CANable_gsusb</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+            <key>IOClass</key>
+            <string>IOUserService</string>
+            <key>IOProviderClass</key>
+            <string>IOUSBHostDevice</string>
+            <key>IOUserClass</key>
+            <string>USBCANDriver</string>
+            <key>IOUserServerName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+            <!-- USB Matching: gs_usb / candleLight -->
+            <key>idVendor</key>
+            <integer>7504</integer>
+            <key>idProduct</key>
+            <integer>24687</integer>
+
+            <key>IOProbeScore</key>
+            <integer>90000</integer>
+
+            <key>UserClientProperties</key>
+            <dict>
+                <key>IOClass</key>
+                <string>IOUserUserClient</string>
+                <key>IOUserClass</key>
+                <string>USBCANUserClient</string>
+            </dict>
+        </dict>
+        <!-- Match PCAN-USB Pro FD (SavvyCAN-FD-X2) — device level -->
+        <!-- PCAN-USB Pro FD is NOT composite on iPadOS — no IOUSBHostInterface providers.
+             Must match at device level. Interface Open may fail (kIOReturnNotPermitted)
+             but CopyPipe still works since we own the device. -->
+        <key>USBCANDriver_PEAK_PCAN</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+            <key>IOClass</key>
+            <string>IOUserService</string>
+            <key>IOProviderClass</key>
+            <string>IOUSBHostDevice</string>
+            <key>IOUserClass</key>
+            <string>USBCANDriver</string>
+            <key>IOUserServerName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+            <!-- USB Matching: PEAK PCAN-USB Pro FD -->
+            <key>idVendor</key>
+            <integer>3186</integer>
+            <key>idProduct</key>
+            <integer>17</integer>
+
+            <key>IOProbeScore</key>
+            <integer>90000</integer>
+
+            <key>UserClientProperties</key>
+            <dict>
+                <key>IOClass</key>
+                <string>IOUserUserClient</string>
+                <key>IOUserClass</key>
+                <string>USBCANUserClient</string>
+            </dict>
+        </dict>
+    </dict>
+</dict>
+</plist>
