@@ -1,5 +1,15 @@
 # CAN client library — app ↔ driver interface + IPC contract
 
+# Export raw header files for DriverKit cross-package includes
+exports_files(
+    [
+        "ipc_methods.h",
+        "shared_ring.h",
+        "shared_ring_io.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # Header-only target for IPC contract headers (shared between can_client and usb_can_driver)
 cc_library(
     name = "ipc_headers",

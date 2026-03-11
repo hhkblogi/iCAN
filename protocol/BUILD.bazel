@@ -1,6 +1,15 @@
 # CAN standard types — header-only library
 # Modeled after Linux include/uapi/linux/can.h + can/error.h
 
+# Export raw header files for DriverKit cross-package includes
+exports_files(
+    [
+        "can.h",
+        "error.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "protocol",
     hdrs = [
