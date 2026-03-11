@@ -4,6 +4,15 @@
 # have no iOS configuration on their own — they only get the correct iPadOS SDK
 # when built transitively through ios_application.
 
+exports_files(
+    [
+        "Info.plist",
+        "iCAN.entitlements",
+        "iCAN-Bridging-Header.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
 # C++ performance layer (MetricsEngine, TestEngines)

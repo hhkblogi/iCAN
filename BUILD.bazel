@@ -1,2 +1,94 @@
-# iCAN: CAN bus monitoring app for iPadOS with DriverKit USB CAN driver
-# Root BUILD file - targets added in later phases
+# Root BUILD file for iCAN
+
+load("//bazel/driverkit:defs.bzl", "ios_application_with_dext")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load(
+    "@rules_xcodeproj//xcodeproj:defs.bzl",
+    "top_level_target",
+    "xcodeproj",
+    "xcode_provisioning_profile",
+)
+load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
+
+package(default_visibility = ["//visibility:public"])
+
+# =============================================================================
+# Xcode Project Generation
+# =============================================================================
+
+xcodeproj(
+    name = "xcodeproj",
+    project_name = "iCAN",
+    top_level_targets = [
+        top_level_target(
+            label = "//:iCAN",
+            target_environments = ["device", "simulator"],
+        ),
+    ],
+    post_build = """\
+if [[ "$PLATFORM_NAME" == *simulator* ]]; then exit 0; fi
+# Inject a hook at the end of copy_outputs.sh so embed_dext.sh runs AFTER
+# the iCAN target copies its outputs (BazelDependencies' post_build
+# runs before iCAN's copy phase, so we must hook into copy_outputs.sh).
+COPY_SCRIPT="$BAZEL_INTEGRATION_DIR/copy_outputs.sh"
+MARKER="# --- dext-embed-hook ---"
+if ! grep -q "$MARKER" "$COPY_SCRIPT" 2>/dev/null; then
+    printf '\\n%s\\n%s\\n' "$MARKER" \
+      '[ -x "$SRCROOT/scripts/embed_dext.sh" ] && "$SRCROOT/scripts/embed_dext.sh" || true' \
+      >> "$COPY_SCRIPT"
+fi
+""",
+    associated_extra_files = {
+        "//:iCAN": [
+            "//usb_can_driver:usb_can_driver.iig",
+            "//usb_can_driver:usb_can_driver.cpp",
+            "//usb_can_driver:usb_can_user_client.iig",
+            "//usb_can_driver:usb_can_user_client.cpp",
+            "//usb_can_driver:Info.plist",
+            "//can_client:can_client.h",
+            "//can_client:can_client.cc",
+        ],
+    },
+)
+
+# =============================================================================
+# Provisioning
+# =============================================================================
+
+local_provisioning_profile(
+    name = "local_profile",
+    profile_name = "iOS Team Provisioning Profile: com.hhkblogi.iCAN",
+    team_id = "GJ6VBRTZLY",
+)
+
+xcode_provisioning_profile(
+    name = "xcode_profile",
+    managed_by_xcode = True,
+    provisioning_profile = ":local_profile",
+)
+
+# =============================================================================
+# iOS Application
+# =============================================================================
+
+ios_application(
+    name = "iCAN",
+    bundle_id = "com.hhkblogi.iCAN",
+    entitlements = "//ican:iCAN.entitlements",
+    families = ["ipad"],
+    infoplists = ["//ican:Info.plist"],
+    minimum_os_version = "26.0",
+    provisioning_profile = ":xcode_profile",
+    deps = ["//ican:iCANLib"],
+)
+
+# =============================================================================
+# iOS Application with Embedded .dext
+# =============================================================================
+
+ios_application_with_dext(
+    name = "iCAN_with_dext",
+    app = ":iCAN",
+    app_name = "iCAN",
+    dext = "//usb_can_driver:USBCANDriver",
+)
