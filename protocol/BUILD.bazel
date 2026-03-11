@@ -1,0 +1,11 @@
+# CAN standard types — header-only library
+# Modeled after Linux include/uapi/linux/can.h + can/error.h
+
+cc_library(
+    name = "protocol",
+    hdrs = [
+        "can.h",
+        "error.h",
+    ],
+    visibility = ["//visibility:public"],
+)
