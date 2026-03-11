@@ -1,0 +1,52 @@
+//
+//  USBCANUserClient.iig
+//  IOUserClient for iOS app communication
+//
+
+#ifndef USBCANUserClient_h
+#define USBCANUserClient_h
+
+#include <Availability.h>
+#include <DriverKit/IOUserClient.iig>
+class USBCANDriver;
+
+class USBCANUserClient: public IOUserClient
+{
+public:
+    // IOService lifecycle
+    virtual bool init() override;
+    virtual kern_return_t Start(IOService* provider) override;
+    virtual kern_return_t Stop(IOService* provider) override;
+    virtual void free() override;
+
+    // IOUserClient interface
+    virtual kern_return_t ExternalMethod(
+        uint64_t selector,
+        IOUserClientMethodArguments* arguments,
+        const IOUserClientMethodDispatch* dispatch,
+        OSObject* target,
+        void* reference) override;
+
+    // Shared memory for RX data queue
+    virtual kern_return_t CopyClientMemoryForType(
+        uint64_t type, uint64_t* options,
+        IOMemoryDescriptor** memory) override;
+
+    // Client methods (LOCALONLY)
+    virtual kern_return_t Open(IOUserClientMethodArguments* args) LOCALONLY;
+    virtual kern_return_t Close(IOUserClientMethodArguments* args) LOCALONLY;
+    virtual kern_return_t SendData(IOUserClientMethodArguments* args) LOCALONLY;
+    virtual kern_return_t SetBaudRate(IOUserClientMethodArguments* args) LOCALONLY;
+
+    // Async RX notification: app blocks until data arrives in RX ring buffer
+    virtual kern_return_t WaitForData(IOUserClientMethodArguments* args) LOCALONLY;
+
+    // CAN channel lifecycle (delegates to driver → codec)
+    virtual kern_return_t OpenChannel(IOUserClientMethodArguments* args) LOCALONLY;
+    virtual kern_return_t CloseChannel(IOUserClientMethodArguments* args) LOCALONLY;
+
+    // Called by driver from ReadCompleteBundled when RX data is available
+    virtual void NotifyRxDataAvailable() LOCALONLY;
+};
+
+#endif /* USBCANUserClient_h */
