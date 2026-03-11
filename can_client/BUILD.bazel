@@ -1,0 +1,33 @@
+# CAN client library — app ↔ driver interface + IPC contract
+
+# Header-only target for IPC contract headers (shared between can_client and usb_can_driver)
+cc_library(
+    name = "ipc_headers",
+    hdrs = [
+        "ipc_methods.h",
+        "shared_ring.h",
+        "shared_ring_io.h",
+    ],
+    deps = ["//protocol"],
+    visibility = ["//visibility:public"],
+)
+
+# Client library (IOKit + shared ring buffer)
+objc_library(
+    name = "can_client",
+    srcs = ["can_client.cc"],
+    hdrs = ["can_client.h"],
+    copts = [
+        "-std=c++23",
+        "-fno-exceptions",
+    ],
+    sdk_frameworks = [
+        "CoreFoundation",
+        "IOKit",
+    ],
+    deps = [
+        ":ipc_headers",
+        "//protocol",
+    ],
+    visibility = ["//visibility:public"],
+)
