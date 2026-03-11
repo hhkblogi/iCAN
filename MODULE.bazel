@@ -1,0 +1,15 @@
+"""Bazel module for iCAN: CAN bus monitoring app for iOS with DriverKit driver."""
+
+module(
+    name = "ican",
+    version = "1.0.0",
+)
+
+# Apple build rules
+bazel_dep(name = "rules_apple", version = "4.0.1")
+bazel_dep(name = "rules_swift", version = "3.1.1")
+bazel_dep(name = "apple_support", version = "1.23.1")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+# Xcode project generation
+bazel_dep(name = "rules_xcodeproj", version = "3.6.0")

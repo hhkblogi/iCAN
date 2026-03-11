@@ -1,0 +1,18 @@
+# iCAN Bazel Configuration
+
+# Enable bzlmod
+common --enable_bzlmod=true
+
+
+# Disk cache
+build --disk_cache=~/.cache/bazel-disk
+
+# Convenience: show test output
+test --test_output=errors
+
+# DriverKit configuration
+build:driverkit --define=DRIVERKIT_SDK=1
+
+# Debug configuration
+build:dbg --compilation_mode=dbg
+build:opt --compilation_mode=opt
