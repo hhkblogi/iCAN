@@ -1,0 +1,5 @@
+# Stub library for DriverKit profile runtime
+
+exports_files([
+    "libclang_rt.profile_driverkit.a",
+])
