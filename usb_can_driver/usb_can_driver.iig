@@ -1,0 +1,103 @@
+//
+//  USBCANDriver.iig
+//  IOService + IOUserClient driver for USB CAN adapters
+//
+//  Multi-protocol: SLCAN, gs_usb (candleLight), PCAN-USB Pro FD
+//  Uses USBDriverKit only — no SerialDriverKit dependency.
+//
+
+#ifndef USBCANDriver_h
+#define USBCANDriver_h
+
+#include <Availability.h>
+#include <DriverKit/IOService.iig>
+#include <DriverKit/IOMemoryDescriptor.iig>
+#include <DriverKit/IOBufferMemoryDescriptor.iig>
+#include <DriverKit/IODispatchQueue.iig>
+#include <USBDriverKit/IOUSBHostDevice.iig>
+#include <USBDriverKit/IOUSBHostInterface.iig>
+#include <USBDriverKit/IOUSBHostPipe.iig>
+class USBCANUserClient;
+
+class USBCANDriver: public IOService
+{
+public:
+    // IOService lifecycle
+    virtual bool init() override;
+    virtual kern_return_t Start(IOService* provider) override;
+    virtual kern_return_t Stop(IOService* provider) override;
+    virtual void free() override;
+
+    // User client creation — called by kernel when app calls IOServiceOpen
+    virtual kern_return_t NewUserClient(uint32_t type, IOUserClient** userClient) override;
+
+    // USB Configuration (LOCALONLY — called from UserClient)
+    virtual kern_return_t ConfigureDevice() LOCALONLY;
+    virtual kern_return_t StartIO() LOCALONLY;
+    virtual kern_return_t StopIO() LOCALONLY;
+
+    // Raw byte TX (called from UserClient::SendData — also drains TX ring if data is NULL)
+    virtual kern_return_t SendData(const uint8_t* data, uint32_t length) LOCALONLY;
+
+    // Internal: send raw bytes to USB bulk OUT pipe (used by codecs via sendFn)
+    virtual kern_return_t SendRawBytes(const uint8_t* data, uint32_t length) LOCALONLY;
+
+    // Drain TX ring through codec (reads frames from TX ring, encodes, sends to USB)
+    virtual kern_return_t DrainTxRing() LOCALONLY;
+
+    // CAN channel lifecycle (delegates to codec)
+    virtual kern_return_t OpenChannel(uint32_t bitrate, uint8_t channel) LOCALONLY;
+    virtual kern_return_t CloseChannel(uint8_t channel) LOCALONLY;
+
+    // CDC ACM SET_LINE_CODING
+    virtual kern_return_t SetLineCoding(uint32_t baudRate, uint8_t dataBits,
+                                         uint8_t stopBits, uint8_t parity) LOCALONLY;
+
+    // RX shared ring buffer accessor (called from UserClient::CopyClientMemoryForType)
+    virtual kern_return_t GetRxSharedBuffer(IOBufferMemoryDescriptor** buffer) LOCALONLY;
+
+    // RX ring pointer accessor (called from UserClient::WaitForData — avoids repeated Map calls)
+    virtual void* GetRxRing() LOCALONLY;
+
+    // User client registration for RX notifications
+    virtual void SetUserClient(USBCANUserClient* uc) LOCALONLY;
+
+    // USB helpers (LOCALONLY)
+    virtual kern_return_t FindInterfaces() LOCALONLY;
+    virtual kern_return_t ConfigurePipes() LOCALONLY;
+    virtual kern_return_t StartAsyncRead() LOCALONLY;
+    virtual kern_return_t StopAsyncRead() LOCALONLY;
+    virtual kern_return_t SubmitPendingReads() LOCALONLY;
+
+    // Async RX completion (dispatched on DEFAULT queue)
+    virtual void ReadCompleteBundled(
+        OSAction*           action,
+        uint32_t            ioCompletionIndex,
+        uint32_t            ioCompletionCount,
+        const uint32_t      actualByteCountArray[16],
+        int                 actualByteCountArrayCount,
+        const kern_return_t statusArray[16],
+        int                 statusArrayCount
+    ) TYPE(IOUSBHostPipe::CompleteAsyncIOBundled);
+
+    // Async TX completion (dispatched on TX queue via fWriteAction binding)
+    virtual void WriteComplete(
+        OSAction*  action,
+        IOReturn   status,
+        uint32_t   actualByteCount,
+        uint64_t   completionTimestamp
+    ) TYPE(IOUSBHostPipe::CompleteAsyncIO);
+
+    // Async command pipe completion (PCAN command pipe EP 0x01)
+    virtual void CommandWriteComplete(
+        OSAction*  action,
+        IOReturn   status,
+        uint32_t   actualByteCount,
+        uint64_t   completionTimestamp
+    ) TYPE(IOUSBHostPipe::CompleteAsyncIO);
+
+    // Send bytes on command pipe (PCAN EP 0x01) — async with fCmdInFlight gating
+    virtual kern_return_t SendCommandBytes(const uint8_t* data, uint32_t length) LOCALONLY;
+};
+
+#endif /* USBCANDriver_h */

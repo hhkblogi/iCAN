@@ -1,0 +1,51 @@
+# USB CAN Driver — DriverKit extension (.dext)
+
+load("//bazel/driverkit:defs.bzl", "driverkit_cc_library", "driverkit_extension", "iig_library")
+
+# IIG compilation — generates C++ headers/sources from .iig interface files
+iig_library(
+    name = "usb_can_driver_iig",
+    srcs = [
+        "usb_can_driver.iig",
+        "usb_can_user_client.iig",
+    ],
+    bundle_id = "com.hhkblogi.iCAN.USBCANDriver",
+)
+
+# DriverKit C++ library
+driverkit_cc_library(
+    name = "usb_can_driver_lib",
+    srcs = [
+        "usb_can_driver.cpp",
+        "usb_can_user_client.cpp",
+        "codecs/slcan_codec.cc",
+        "codecs/gsusb_codec.cc",
+        "codecs/pcan_codec.cc",
+    ],
+    hdrs = [
+        "driver_types.h",
+        "codecs/slcan_codec.h",
+        "codecs/gsusb_codec.h",
+        "codecs/pcan_codec.h",
+        # Cross-package headers (referenced as file labels, not library deps)
+        "//protocol:can.h",
+        "//protocol:error.h",
+        "//can_client:ipc_methods.h",
+        "//can_client:shared_ring.h",
+        "//can_client:shared_ring_io.h",
+    ],
+    copts = ["-I", "."],
+    deps = [":usb_can_driver_iig"],
+    link_libs = ["//stub_lib:libclang_rt.profile_driverkit.a"],
+)
+
+# DriverKit extension bundle (.dext)
+driverkit_extension(
+    name = "USBCANDriver",
+    bundle_id = "com.hhkblogi.iCAN.USBCANDriver",
+    executable_name = "USBCANDriver",
+    infoplist = "Info.plist",
+    deps = [":usb_can_driver_lib"],
+    link_libs = ["//stub_lib:libclang_rt.profile_driverkit.a"],
+    visibility = ["//visibility:public"],
+)
