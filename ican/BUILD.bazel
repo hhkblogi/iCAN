@@ -1,0 +1,45 @@
+# iCAN — iPadOS App
+#
+# Intermediate targets are tagged "manual" because swift_library / objc_library
+# have no iOS configuration on their own — they only get the correct iPadOS SDK
+# when built transitively through ios_application.
+
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# C++ performance layer (MetricsEngine, TestEngines)
+objc_library(
+    name = "iCANObjC",
+    srcs = [
+        "perf/MetricsEngine.cpp",
+        "perf/TestEngines.cpp",
+    ],
+    hdrs = [
+        "iCAN-Bridging-Header.h",
+        "perf/MetricsEngine.hpp",
+        "perf/TestEngines.hpp",
+    ],
+    includes = ["perf"],
+    copts = ["-std=c++23"],
+    sdk_frameworks = ["IOKit"],
+    tags = ["manual"],
+    deps = ["//can_client"],
+    visibility = ["//visibility:public"],
+)
+
+# Swift app library (all SwiftUI views, models, viewmodels)
+swift_library(
+    name = "iCANLib",
+    srcs = glob(["app/**/*.swift"]),
+    copts = [
+        "-cxx-interoperability-mode=default",
+        "-import-objc-header",
+        "$(execpath iCAN-Bridging-Header.h)",
+        "-default-isolation=MainActor",
+        "-enable-upcoming-feature", "MemberImportVisibility",
+    ],
+    module_name = "iCAN",
+    swiftc_inputs = ["iCAN-Bridging-Header.h"],
+    tags = ["manual"],
+    deps = [":iCANObjC"],
+    visibility = ["//visibility:public"],
+)
