@@ -6,6 +6,8 @@ exports_files(
         "ipc_methods.h",
         "shared_ring.h",
         "shared_ring_io.h",
+        "can_client.h",
+        "can_client.cc",
     ],
     visibility = ["//visibility:public"],
 )
