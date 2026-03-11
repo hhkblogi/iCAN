@@ -1,0 +1,5 @@
+# DriverKit custom rules package
+
+exports_files([
+    "clang_wrapper.sh",
+])

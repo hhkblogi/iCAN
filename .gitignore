@@ -1,0 +1,58 @@
+# Bazel
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-ican-dev-01
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+DerivedData/
+build/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+
+# Claude Code
+.claude/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Zip archives
+*.zip
+
+# Node (for web design reference)
+node_modules/
+dist/
+
+# Bazel lock file (large, regenerated)
+MODULE.bazel.lock
+
+# Generated Xcode project from rules_xcodeproj
+iCAN.xcodeproj/
+
+# Log files
+*.log
