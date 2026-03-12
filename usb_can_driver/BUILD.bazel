@@ -1,5 +1,17 @@
 # USB CAN Driver — DriverKit extension (.dext)
 
+# Export source files for Xcode project association
+exports_files(
+    [
+        "usb_can_driver.iig",
+        "usb_can_driver.cpp",
+        "usb_can_user_client.iig",
+        "usb_can_user_client.cpp",
+        "Info.plist",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 load("//bazel/driverkit:defs.bzl", "driverkit_cc_library", "driverkit_extension", "iig_library")
 
 # IIG compilation — generates C++ headers/sources from .iig interface files
