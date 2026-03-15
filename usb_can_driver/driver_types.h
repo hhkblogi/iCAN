@@ -25,7 +25,7 @@ struct canfd_frame;
 
 #define TX_BUFFER_SIZE      4096
 #define RX_RING_SIZE        16       // slots in MemoryDescriptorRing (kIOUSBHostPipeBundlingMax)
-#define RX_SLOT_SIZE        128      // bytes per slot (USB 2.0 FS max packet = 64)
+#define RX_SLOT_SIZE        1024     // bytes per slot (must exceed USB HS bulk max 512)
 #define SLCAN_ENCODE_BUF    256      // worst case: 'D' + 8-char ID + 1 DLC + 128 hex + '\r'
 #define TX_POLL_INTERVAL_NS 250000ULL  // 0.25ms
 
