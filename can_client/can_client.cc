@@ -156,7 +156,7 @@ static uint32_t slcan_encode(const canfd_frame* frame, char* out, uint32_t outSi
         out[pos++] = hex_nibble(rawId & 0x0F);
     }
 
-    uint8_t dlc = isFD ? canfd_len_to_dlc(frame->len) : frame->len;
+    uint8_t dlc = isFD ? can_fd_len2dlc(frame->len) : frame->len;
     out[pos++] = hex_nibble(dlc);
 
     uint8_t dataLen = frame->len;
@@ -205,7 +205,7 @@ static bool slcan_decode(const char* buf, uint32_t len, canfd_frame* out) {
     int dlcVal = hex_val(buf[pos++]);
     if (dlcVal < 0 || dlcVal > 15) return false;
 
-    uint8_t dataLen = isFD ? canfd_dlc_to_len(static_cast<uint8_t>(dlcVal))
+    uint8_t dataLen = isFD ? can_fd_dlc2len(static_cast<uint8_t>(dlcVal))
                            : static_cast<uint8_t>(dlcVal);
     if (!isFD && dataLen > CAN_MAX_DLEN) return false;
     out->len = dataLen;

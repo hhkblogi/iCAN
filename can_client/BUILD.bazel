@@ -29,6 +29,7 @@ objc_library(
     name = "can_client",
     srcs = ["can_client.cc"],
     hdrs = ["can_client.h"],
+    includes = ["."],
     copts = [
         "-std=c++23",
         "-fno-exceptions",
