@@ -1,5 +1,6 @@
 #!/bin/bash
 # Pre-commit hook: Prevent accidental commits of sensitive local config
+# Activated by scripts/setup.sh (git config core.hooksPath .githooks)
 #
 # 1. Blocks commits of team_config.bzl (should be gitignored)
 # 2. Blocks commits of .mobileprovision files
