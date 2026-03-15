@@ -9,6 +9,7 @@ load(
     "xcode_provisioning_profile",
 )
 load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
+load("//:team_config.bzl", "DEV_PROFILE_NAME", "TEAM_ID")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -57,8 +58,8 @@ fi
 
 local_provisioning_profile(
     name = "local_profile",
-    profile_name = "iOS Team Provisioning Profile: com.hhkblogi.iCAN",
-    team_id = "GJ6VBRTZLY",
+    profile_name = DEV_PROFILE_NAME,
+    team_id = TEAM_ID,
 )
 
 xcode_provisioning_profile(
