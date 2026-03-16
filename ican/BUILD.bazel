@@ -19,11 +19,13 @@ load("@rules_swift//swift:swift.bzl", "swift_library")
 objc_library(
     name = "iCANObjC",
     srcs = [
+        "perf/DashboardMetricsEngine.cpp",
         "perf/MetricsEngine.cpp",
         "perf/TestEngines.cpp",
     ],
     hdrs = [
         "iCAN-Bridging-Header.h",
+        "perf/DashboardMetricsEngine.hpp",
         "perf/MetricsEngine.hpp",
         "perf/TestEngines.hpp",
     ],

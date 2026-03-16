@@ -62,25 +62,22 @@ class CANDashboardViewModel: ObservableObject {
     private var bidirEngine = BidirTestEngine()
     private var distBidirEngine = DistBidirTestEngine()
 
+    // C++ Dashboard Metrics Engines (background reader threads)
+    private var dashEngine1 = DashboardMetricsEngine()
+    private var dashEngine2 = DashboardMetricsEngine()
+
     // Timers
     private var bandwidthStatsTimer: Timer?
     private var bidirStatsTimer: Timer?
     private var distBidirStatsTimer: Timer?
-    private var updateTimer: Timer?
-    private var receiveTimer: Timer?
-    private var statsTimer: Timer?
-    
+    private var snapshotTimer: Timer?
+
     private var bidirLastSecond = Date()
     private var bandwidthLastSecond = Date()
     private var distBidirLastSecond = Date()
     private var startTime = Date()
-    private var lastSecondTimestamp = Date()
+    private var lastRateTime = Date()
     private var cancellables = Set<AnyCancellable>()
-    
-    // Metrics Accumulators
-    private var idCounts: [String: Int] = [:]
-    private var messagesThisSecond = 0
-    private var totalBytesReceived = 0
     
     var isCANOpen: Bool {
         adapter1.isCANOpen || adapter2.isCANOpen
@@ -198,116 +195,154 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func openCANChannels() {
-        if adapter1.isConnected { adapter1.openCANChannel(bitrate: selectedBitrate) }
-        if adapter2.isConnected { adapter2.openCANChannel(bitrate: selectedBitrate) }
+        if adapter1.isConnected {
+            adapter1.openCANChannel(bitrate: selectedBitrate)
+            if let c = adapter1.ioClient {
+                dashEngine1 = DashboardMetricsEngine()
+                dashEngine1.start(c.canClient(), Int32(0))
+            }
+        }
+        if adapter2.isConnected {
+            adapter2.openCANChannel(bitrate: selectedBitrate)
+            if let c = adapter2.ioClient {
+                dashEngine2 = DashboardMetricsEngine()
+                dashEngine2.start(c.canClient(), Int32(1))
+            }
+        }
         updateBusStatuses()
     }
-    
+
     func closeCANChannels() {
+        dashEngine1.stop()
+        dashEngine2.stop()
         adapter1.closeCANChannel()
         adapter2.closeCANChannel()
         updateBusStatuses()
     }
     
     private func startDataCollection() {
-        receiveTimer = Timer.scheduledTimer(withTimeInterval: 0.005, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollAdapters() }
-        }
-        
-        statsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateStats() }
-        }
-        
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                if self?.useSimulatedData == true { self?.generateSimulatedMessage() }
-            }
+        // Single snapshot timer — polls C++ engines every 300ms
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollSnapshots() }
         }
     }
-    
-    private func pollAdapters() {
+
+    private func pollSnapshots() {
         guard isLive else { return }
 
-        if adapter1.isConnected && adapter1.isCANOpen {
-            let frames = adapter1.receiveFrames()
-            for frame in frames {
-                let msg = CANMessage.FromCanFDFrame(frame)
-                processCANMessage(msg, from: "Adapter 1")
-            }
-        }
-        if adapter2.isConnected && adapter2.isCANOpen {
-            let frames = adapter2.receiveFrames()
-            for frame in frames {
-                let msg = CANMessage.FromCanFDFrame(frame)
-                processCANMessage(msg, from: "Adapter 2")
-            }
-        }
-    }
+        let snap1 = dashEngine1.snapshot()
+        let snap2 = dashEngine2.snapshot()
 
-    private func processCANMessage(_ canMsg: CANMessage, from adapter: String) {
-        let logMsg = CANLogMessage(
-            timestamp: Date(),
-            bus: adapter,
-            canId: canMsg.arbitrationIdHex,
-            dlc: canMsg.dataLength,
-            data: canMsg.dataHex,
-            type: canMsg.isExtended ? "Extended" : "Standard",
-            direction: "RX"
-        )
-
-        messages.append(logMsg)
-        if messages.count > 500 { messages.removeFirst() }
-
-        metrics.messagesReceived += 1
-        messagesThisSecond += 1
-        totalBytesReceived += canMsg.dataLength + 4
-        idCounts[canMsg.arbitrationIdHex, default: 0] += 1
-
-        if adapter == "Adapter 1" { busStatuses[0].messageCount += 1 }
-        else { busStatuses[1].messageCount += 1 }
-    }
-    
-    private func updateStats() {
+        // Drain per-second rate counters
         let now = Date()
-        let elapsed = now.timeIntervalSince(lastSecondTimestamp)
-        
-        if elapsed >= 1.0 {
-            metrics.messageRate = Double(messagesThisSecond) / elapsed
-            metrics.throughput = Double(totalBytesReceived) / elapsed / 1024.0
-            
+        let elapsed = now.timeIntervalSince(lastRateTime)
+
+        if elapsed >= 0.9 {
+            let rate1 = dashEngine1.drainRateCounters()
+            let rate2 = dashEngine2.drainRateCounters()
+
+            let totalMsgRate = (Double(rate1.messages) + Double(rate2.messages)) / elapsed
+            let totalByteRate = (Double(rate1.bytes) + Double(rate2.bytes)) / elapsed
+
+            metrics.messageRate = totalMsgRate
+            metrics.throughput = totalByteRate / 1024.0
+
             let bitsPerFrame = 130.0
             let busCapacity = max(Double(selectedBitrate.rawValue), 1.0)
-            let safeElapsed = max(elapsed, 0.001)
-            metrics.busLoad = min((Double(messagesThisSecond) * bitsPerFrame / safeElapsed / busCapacity) * 100, 100)
-            
-            busStatuses[0].messageRate = Double(busStatuses[0].messageCount) / max(metrics.uptime, 1) * (metrics.uptime > 1 ? 1 : 0)
-            busStatuses[1].messageRate = Double(busStatuses[1].messageCount) / max(metrics.uptime, 1) * (metrics.uptime > 1 ? 1 : 0)
-            
-            messageRateHistory.append(MessageRatePoint(timestamp: now, messageRate: metrics.messageRate))
+            metrics.busLoad = min(totalMsgRate * bitsPerFrame / busCapacity * 100, 100)
+
+            busStatuses[0].messageRate = Double(rate1.messages) / elapsed
+            busStatuses[1].messageRate = Double(rate2.messages) / elapsed
+
+            messageRateHistory.append(MessageRatePoint(timestamp: now, messageRate: totalMsgRate))
             if messageRateHistory.count > 60 { messageRateHistory.removeFirst() }
-            
+
             busLoadHistory.append(BusLoadPoint(timestamp: now, bus0Load: metrics.busLoad, bus1Load: 0))
             if busLoadHistory.count > 60 { busLoadHistory.removeFirst() }
-            
-            messageDistribution.append(MessageDistPoint(timestamp: now, count: messagesThisSecond))
+
+            messageDistribution.append(MessageDistPoint(timestamp: now, count: Int(rate1.messages + rate2.messages)))
             if messageDistribution.count > 30 { messageDistribution.removeFirst() }
-            
-            messagesThisSecond = 0
-            totalBytesReceived = 0
-            lastSecondTimestamp = now
+
+            lastRateTime = now
         }
-        
+
+        // Cumulative metrics
+        metrics.messagesReceived = Int(snap1.totalMessages + snap2.totalMessages)
         metrics.uptime = now.timeIntervalSince(startTime)
-        metrics.activeNodes = idCounts.count
-        idDistribution = idCounts.map { CANIdDistribution(canId: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }.prefix(10).map { $0 }
-        
+        metrics.activeNodes = Int(snap1.uniqueIdCount + snap2.uniqueIdCount)
+
+        busStatuses[0].messageCount = Int(snap1.totalMessages)
+        busStatuses[1].messageCount = Int(snap2.totalMessages)
+
+        // ID distribution (top 10 from C++ snapshots)
+        var combined: [CANIdDistribution] = []
+        withUnsafeBytes(of: snap1.topIds) { buf in
+            for i in 0..<Int(snap1.topIdCount) {
+                let entry = buf.load(fromByteOffset: i * MemoryLayout<CanIdCount>.stride, as: CanIdCount.self)
+                let hexId = entry.isExtended
+                    ? String(format: "0x%08X", entry.canId)
+                    : String(format: "0x%03X", entry.canId)
+                combined.append(CANIdDistribution(canId: hexId, count: Int(entry.count)))
+            }
+        }
+        withUnsafeBytes(of: snap2.topIds) { buf in
+            for i in 0..<Int(snap2.topIdCount) {
+                let entry = buf.load(fromByteOffset: i * MemoryLayout<CanIdCount>.stride, as: CanIdCount.self)
+                let hexId = entry.isExtended
+                    ? String(format: "0x%08X", entry.canId)
+                    : String(format: "0x%03X", entry.canId)
+                if let idx = combined.firstIndex(where: { $0.canId == hexId }) {
+                    combined[idx] = CANIdDistribution(canId: hexId, count: combined[idx].count + Int(entry.count))
+                } else {
+                    combined.append(CANIdDistribution(canId: hexId, count: Int(entry.count)))
+                }
+            }
+        }
+        idDistribution = combined.sorted { $0.count > $1.count }.prefix(10).map { $0 }
+
+        // Recent messages from C++ circular buffer
+        var newMessages: [CANLogMessage] = []
+        withUnsafeBytes(of: snap1.recentFrames) { buf in
+            for i in 0..<min(Int(snap1.recentFrameCount), 100) {
+                let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 1"))
+            }
+        }
+        withUnsafeBytes(of: snap2.recentFrames) { buf in
+            for i in 0..<min(Int(snap2.recentFrameCount), 100) {
+                let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 2"))
+            }
+        }
+        newMessages.sort { $0.timestamp > $1.timestamp }
+        messages = Array(newMessages.prefix(500))
+
+        // Network health
         if metrics.messageRate > 100 { metrics.networkHealth = "Excellent" }
         else if metrics.messageRate > 10 { metrics.networkHealth = "Good" }
         else if metrics.messagesReceived > 0 { metrics.networkHealth = "Low Traffic" }
         else { metrics.networkHealth = "No Data" }
-        
+
         updateBusStatuses()
+    }
+
+    private func recentFrameToLogMessage(_ rf: RecentFrame, adapter: String) -> CANLogMessage {
+        let isExt = rf.canId > 0x7FF
+        let hexId = isExt
+            ? String(format: "0x%08X", rf.canId)
+            : String(format: "0x%03X", rf.canId)
+        let dataHex = withUnsafeBytes(of: rf.data) { buf in
+            (0..<Int(rf.len)).map { String(format: "%02X", buf[$0]) }.joined(separator: " ")
+        }
+        return CANLogMessage(
+            timestamp: startTime.addingTimeInterval(rf.timestampOffset),
+            bus: adapter,
+            canId: hexId,
+            dlc: Int(rf.len),
+            data: dataHex,
+            type: isExt ? "Extended" : "Standard",
+            direction: "RX"
+        )
     }
     
     private func updateBusStatuses() {
@@ -326,10 +361,14 @@ class CANDashboardViewModel: ObservableObject {
     }
     
     func clearMessages() {
+        dashEngine1.reset()
+        dashEngine2.reset()
         messages.removeAll()
         errorCount = 0
-        idCounts.removeAll()
         idDistribution.removeAll()
+        messageRateHistory.removeAll()
+        busLoadHistory.removeAll()
+        messageDistribution.removeAll()
     }
     
     // MARK: - Tests
