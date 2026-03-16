@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 import os.log
 
-private let dashLog = OSLog(subsystem: "com.hhkblogi.iCAN", category: "Dashboard")
+private let dashLog = OSLog(subsystem: "com.hhkblogi.ican", category: "Dashboard")
 
 struct PortInfo: Hashable, Identifiable {
     let name: String        // "PCAN Ch0", "SLCAN", "gs_usb", etc.

@@ -8,8 +8,7 @@ load(
     "xcodeproj",
     "xcode_provisioning_profile",
 )
-load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
-load("//:team_config.bzl", "DEV_PROFILE_NAME", "TEAM_ID")
+load("//:team_config.bzl", "TEAM_ID")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,8 +21,8 @@ xcodeproj(
     project_name = "iCAN",
     top_level_targets = [
         top_level_target(
-            label = "//:iCAN",
-            target_environments = ["device", "simulator"],
+            label = "//:iCAN_app",
+            target_environments = ["device"],
         ),
     ],
     post_build = """\
@@ -40,7 +39,7 @@ if ! grep -q "$MARKER" "$COPY_SCRIPT" 2>/dev/null; then
 fi
 """,
     associated_extra_files = {
-        "//:iCAN": [
+        "//:iCAN_app": [
             "//usb_can_driver:usb_can_driver.iig",
             "//usb_can_driver:usb_can_driver.cpp",
             "//usb_can_driver:usb_can_user_client.iig",
@@ -56,16 +55,22 @@ fi
 # Provisioning
 # =============================================================================
 
-local_provisioning_profile(
+APP_BUNDLE_ID = "com.hhkblogi.ican"
+
+genrule(
     name = "local_profile",
-    profile_name = DEV_PROFILE_NAME,
-    team_id = TEAM_ID,
+    outs = ["iCAN.mobileprovision"],
+    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + APP_BUNDLE_ID + " $@",
+    tools = ["//scripts:find_profile.sh"],
+    local = True,
+    tags = ["no-cache"],
 )
 
 xcode_provisioning_profile(
     name = "xcode_profile",
     managed_by_xcode = True,
     provisioning_profile = ":local_profile",
+    team_id = TEAM_ID,
 )
 
 # =============================================================================
@@ -73,8 +78,8 @@ xcode_provisioning_profile(
 # =============================================================================
 
 ios_application(
-    name = "iCAN",
-    bundle_id = "com.hhkblogi.iCAN",
+    name = "iCAN_app",
+    bundle_id = "com.hhkblogi.ican",
     entitlements = "//ican:iCAN.entitlements",
     families = ["ipad"],
     infoplists = ["//ican:Info.plist"],
@@ -89,7 +94,7 @@ ios_application(
 
 ios_application_with_dext(
     name = "iCAN_with_dext",
-    app = ":iCAN",
+    app = ":iCAN_app",
     app_name = "iCAN",
     dext = "//usb_can_driver:USBCANDriver",
 )

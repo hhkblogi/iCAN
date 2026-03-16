@@ -5,7 +5,7 @@ import os.log
 
 // MARK: - Serial Adapter
 
-private nonisolated let slcanLog = OSLog(subsystem: "com.hhkblogi.iCAN", category: "SLCAN")
+private nonisolated let slcanLog = OSLog(subsystem: "com.hhkblogi.ican", category: "SLCAN")
 
 @MainActor
 class SerialAdapter: ObservableObject {

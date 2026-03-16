@@ -118,11 +118,11 @@ iig_library = rule(
             doc = "Bundle identifier for the DriverKit extension (determines output subdirectory).",
         ),
         "driverkit_sdk_path": attr.string(
-            default = "/Applications/Xcode.app/Contents/Developer/Platforms/DriverKit.platform/Developer/SDKs/DriverKit25.1.sdk",
+            default = "/Applications/Xcode.app/Contents/Developer/Platforms/DriverKit.platform/Developer/SDKs/DriverKit25.2.sdk",
             doc = "Path to the DriverKit SDK.",
         ),
         "deployment_target": attr.string(
-            default = "25.1",
+            default = "25.2",
             doc = "DriverKit deployment target version.",
         ),
         "includes": attr.string_list(

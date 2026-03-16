@@ -10,7 +10,7 @@
 import Foundation
 import os.log
 
-private nonisolated let log = OSLog(subsystem: "com.hhkblogi.iCAN", category: "CANConnection")
+private nonisolated let log = OSLog(subsystem: "com.hhkblogi.ican", category: "CANConnection")
 
 /// nonisolated: This class uses the C++ library's std::mutex for thread safety
 /// and is called from background threads (bandwidth test loops).
