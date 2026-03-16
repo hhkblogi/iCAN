@@ -227,7 +227,6 @@ class CANDashboardViewModel: ObservableObject {
     
     private func pollAdapters() {
         guard isLive else { return }
-        guard !isBandwidthTestRunning && !isBidirTestRunning && !isDistBidirTestRunning else { return }
 
         if adapter1.isConnected && adapter1.isCANOpen {
             let frames = adapter1.receiveFrames()
