@@ -61,7 +61,7 @@ public:
     DashboardMetricsEngine& operator=(const DashboardMetricsEngine&);
 
     /// Start background reader thread. Client must be open with CAN channel active.
-    void start(CANClient client, int adapterIndex);
+    void start(CANClient client);
 
     /// Stop and join background thread.
     void stop();

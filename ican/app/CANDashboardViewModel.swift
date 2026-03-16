@@ -199,14 +199,14 @@ class CANDashboardViewModel: ObservableObject {
             adapter1.openCANChannel(bitrate: selectedBitrate)
             if let c = adapter1.ioClient {
                 dashEngine1 = DashboardMetricsEngine()
-                dashEngine1.start(c.canClient(), Int32(0))
+                dashEngine1.start(c.canClient())
             }
         }
         if adapter2.isConnected {
             adapter2.openCANChannel(bitrate: selectedBitrate)
             if let c = adapter2.ioClient {
                 dashEngine2 = DashboardMetricsEngine()
-                dashEngine2.start(c.canClient(), Int32(1))
+                dashEngine2.start(c.canClient())
             }
         }
         updateBusStatuses()
@@ -249,15 +249,19 @@ class CANDashboardViewModel: ObservableObject {
 
             let bitsPerFrame = 130.0
             let busCapacity = max(Double(selectedBitrate.rawValue), 1.0)
+            let rate1MsgSec = Double(rate1.messages) / elapsed
+            let rate2MsgSec = Double(rate2.messages) / elapsed
+            let bus0Load = min(rate1MsgSec * bitsPerFrame / busCapacity * 100, 100)
+            let bus1Load = min(rate2MsgSec * bitsPerFrame / busCapacity * 100, 100)
             metrics.busLoad = min(totalMsgRate * bitsPerFrame / busCapacity * 100, 100)
 
-            busStatuses[0].messageRate = Double(rate1.messages) / elapsed
-            busStatuses[1].messageRate = Double(rate2.messages) / elapsed
+            busStatuses[0].messageRate = rate1MsgSec
+            busStatuses[1].messageRate = rate2MsgSec
 
             messageRateHistory.append(MessageRatePoint(timestamp: now, messageRate: totalMsgRate))
             if messageRateHistory.count > 60 { messageRateHistory.removeFirst() }
 
-            busLoadHistory.append(BusLoadPoint(timestamp: now, bus0Load: metrics.busLoad, bus1Load: 0))
+            busLoadHistory.append(BusLoadPoint(timestamp: now, bus0Load: bus0Load, bus1Load: bus1Load))
             if busLoadHistory.count > 60 { busLoadHistory.removeFirst() }
 
             messageDistribution.append(MessageDistPoint(timestamp: now, count: Int(rate1.messages + rate2.messages)))
@@ -305,13 +309,13 @@ class CANDashboardViewModel: ObservableObject {
         withUnsafeBytes(of: snap1.recentFrames) { buf in
             for i in 0..<min(Int(snap1.recentFrameCount), 100) {
                 let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 1"))
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 1", snapDuration: snap1.duration))
             }
         }
         withUnsafeBytes(of: snap2.recentFrames) { buf in
             for i in 0..<min(Int(snap2.recentFrameCount), 100) {
                 let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 2"))
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 2", snapDuration: snap2.duration))
             }
         }
         newMessages.sort { $0.timestamp > $1.timestamp }
@@ -326,7 +330,7 @@ class CANDashboardViewModel: ObservableObject {
         updateBusStatuses()
     }
 
-    private func recentFrameToLogMessage(_ rf: RecentFrame, adapter: String) -> CANLogMessage {
+    private func recentFrameToLogMessage(_ rf: RecentFrame, adapter: String, snapDuration: Double) -> CANLogMessage {
         let isExt = rf.isExtended
         let hexId = isExt
             ? String(format: "0x%08X", rf.canId)
@@ -335,7 +339,7 @@ class CANDashboardViewModel: ObservableObject {
             (0..<Int(rf.len)).map { String(format: "%02X", buf[$0]) }.joined(separator: " ")
         }
         return CANLogMessage(
-            timestamp: startTime.addingTimeInterval(rf.timestampOffset),
+            timestamp: Date().addingTimeInterval(rf.timestampOffset - snapDuration),
             bus: adapter,
             canId: hexId,
             dlc: Int(rf.len),

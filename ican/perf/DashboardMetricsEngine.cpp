@@ -37,7 +37,6 @@ public:
     std::thread readerThread;
 
     CANClient client;
-    int adapterIndex = 0;
 
     // --- Atomic counters (hot path — updated per frame) ---
     std::atomic<uint64_t> totalMessages{0};
@@ -144,14 +143,16 @@ DashboardMetricsEngine& DashboardMetricsEngine::operator=(const DashboardMetrics
     return *this;
 }
 
-void DashboardMetricsEngine::start(CANClient client, int adapterIndex) {
+void DashboardMetricsEngine::start(CANClient client) {
     std::lock_guard<std::mutex> lock(_impl->lifecycleMutex);
     if (_impl->running.load(std::memory_order_acquire)) return;
 
     _impl->cancelled.store(false, std::memory_order_relaxed);
     _impl->client = client;
-    _impl->adapterIndex = adapterIndex;
-    _impl->startTime = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> dataLock(_impl->dataMutex);
+        _impl->startTime = std::chrono::steady_clock::now();
+    }
 
     _impl->readerThread = std::thread([impl = _impl]() {
         impl->readerLoop();
