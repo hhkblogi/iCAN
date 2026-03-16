@@ -7,6 +7,9 @@ common --enable_bzlmod=true
 # Disk cache
 build --disk_cache=~/.cache/bazel-disk
 
+# Device-only builds (no simulator — DriverKit requires real hardware)
+build --ios_multi_cpus=arm64
+
 # Convenience: show test output
 test --test_output=errors
 

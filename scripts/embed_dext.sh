@@ -35,11 +35,13 @@ DEXT="$("$BAZEL" info bazel-bin 2>/dev/null)/usb_can_driver/USBCANDriver.dext"
 [ -d "$DEXT" ] || DEXT="bazel-bin/usb_can_driver/USBCANDriver.dext"
 [ -d "$DEXT" ] || { echo "warning: USBCANDriver.dext not found, skipping embed" >&2; exit 0; }
 
+# Make app bundle writable before modifying it
+chmod -R u+w "$APP"
+
 # Copy dext into app bundle
 mkdir -p "$APP/SystemExtensions"
 rsync -a --delete "$DEXT/" "$APP/SystemExtensions/USBCANDriver.dext/"
 chmod -R u+w "$APP/SystemExtensions/USBCANDriver.dext"
-chmod -R u+w "$APP"
 
 # Read bundle IDs from built bundles
 APP_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist" 2>/dev/null)
@@ -48,23 +50,32 @@ DEXT_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Sy
 [ -n "$DEXT_BUNDLE_ID" ] || { echo "error: cannot read dext bundle ID" >&2; exit 1; }
 
 # Auto-discover dext provisioning profile by bundle ID
-PROFILES_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+# Search both Xcode-managed and manually-installed profile directories
+PROFILES_DIRS=(
+    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+    "$HOME/Library/MobileDevice/Provisioning Profiles"
+)
 DEXT_PROFILE=""
-if [ -d "$PROFILES_DIR" ]; then
-    # Search both .provisionprofile (macOS) and .mobileprovision (iOS) extensions
-    for f in "$PROFILES_DIR"/*.provisionprofile "$PROFILES_DIR"/*.mobileprovision; do
+for PROFILES_DIR in "${PROFILES_DIRS[@]}"; do
+    [ -d "$PROFILES_DIR" ] || continue
+    for f in "$PROFILES_DIR"/*.mobileprovision "$PROFILES_DIR"/*.provisionprofile; do
         [ -f "$f" ] || continue
         appid=$(security cms -D -i "$f" 2>/dev/null | \
             xmllint --xpath '//key[text()="application-identifier"]/following-sibling::string[1]/text()' - 2>/dev/null)
         if [[ "$appid" == *"$DEXT_BUNDLE_ID" ]]; then
             DEXT_PROFILE="$f"
-            break
+            break 2
         fi
     done
-fi
+done
 
 if [ -n "$DEXT_PROFILE" ]; then
-    cp "$DEXT_PROFILE" "$APP/SystemExtensions/USBCANDriver.dext/embedded.provisionprofile"
+    # Use matching extension: .mobileprovision for iOS, .provisionprofile for DriverKit
+    if [[ "$DEXT_PROFILE" == *.mobileprovision ]]; then
+        cp "$DEXT_PROFILE" "$APP/SystemExtensions/USBCANDriver.dext/embedded.mobileprovision"
+    else
+        cp "$DEXT_PROFILE" "$APP/SystemExtensions/USBCANDriver.dext/embedded.provisionprofile"
+    fi
     # Extract team ID from the profile
     TEAM_ID=$(security cms -D -i "$DEXT_PROFILE" 2>/dev/null | \
         xmllint --xpath '//key[text()="TeamIdentifier"]/following-sibling::array[1]/string[1]/text()' - 2>/dev/null)
@@ -76,18 +87,19 @@ fi
 
 # Auto-discover and embed the app provisioning profile (replace Bazel's ad-hoc one)
 APP_PROFILE=""
-if [ -d "$PROFILES_DIR" ]; then
-    for f in "$PROFILES_DIR"/*.provisionprofile "$PROFILES_DIR"/*.mobileprovision; do
+for PROFILES_DIR in "${PROFILES_DIRS[@]}"; do
+    [ -d "$PROFILES_DIR" ] || continue
+    for f in "$PROFILES_DIR"/*.mobileprovision "$PROFILES_DIR"/*.provisionprofile; do
         [ -f "$f" ] || continue
         appid=$(security cms -D -i "$f" 2>/dev/null | \
             xmllint --xpath '//key[text()="application-identifier"]/following-sibling::string[1]/text()' - 2>/dev/null)
         # Match app bundle ID exactly (not the dext)
         if [[ "$appid" == *"$APP_BUNDLE_ID" && "$appid" != *"$DEXT_BUNDLE_ID" ]]; then
             APP_PROFILE="$f"
-            break
+            break 2
         fi
     done
-fi
+done
 
 if [ -n "$APP_PROFILE" ]; then
     cp "$APP_PROFILE" "$APP/embedded.mobileprovision"
@@ -95,7 +107,12 @@ else
     echo "warning: no provisioning profile found for $APP_BUNDLE_ID" >&2
 fi
 
-# Fallback: extract team ID from signing identity if not from profile
+# Fallback: extract team ID from app profile if dext profile wasn't found
+if [ -z "$TEAM_ID" ] && [ -n "$APP_PROFILE" ]; then
+    TEAM_ID=$(security cms -D -i "$APP_PROFILE" 2>/dev/null | \
+        xmllint --xpath '//key[text()="TeamIdentifier"]/following-sibling::array[1]/string[1]/text()' - 2>/dev/null)
+fi
+# Last resort: extract team ID from signing identity
 if [ -z "$TEAM_ID" ]; then
     TEAM_ID=$(security find-identity -v -p codesigning 2>/dev/null | \
         grep "Apple Development" | head -1 | sed 's/.*(\([A-Z0-9]*\)).*/\1/')
