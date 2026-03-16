@@ -5,8 +5,7 @@
  * Protocol-agnostic: driver handles encoding/decoding, client sends/receives frames.
  * Pimpl pattern hides internals from Swift interop.
  *
- * On device: IOKit matching + ExternalMethod(SendData) + SharedRingHeader(RX via mmap)
- * On simulator: POSIX serial I/O to /dev/cu.usbmodem*
+ * IOKit matching + ExternalMethod(SendData) + SharedRingHeader(RX via mmap)
  *
  * Return convention: 0 = success, negative = error (POSIX-style).
  * write/writeClassic return 0/1 (frames written). readMany returns count.
@@ -37,9 +36,7 @@ public:
 
     // --- Lifecycle (analogous to socket + bind + close) ---
 
-    // Find and open the CAN adapter.
-    // On device: IOKit service matching + IOServiceOpen
-    // On simulator: POSIX serial to /dev/cu.usbmodem*
+    // Find and open the CAN adapter via IOKit service matching + IOServiceOpen.
     // Returns true on success.
     bool open(int adapter_index = 0);
 
@@ -85,7 +82,7 @@ public:
     int readMany(struct canfd_frame* frames, int max_frames);
 
     // Read up to max_frames, blocking up to timeoutMs if none available.
-    // On device: uses async completion (WaitForData) to sleep efficiently.
+    // Uses async completion (WaitForData) to sleep efficiently.
     // Returns number of frames read (0 if timeout with no data).
     int readManyBlocking(struct canfd_frame* frames, int max_frames, uint32_t timeoutMs);
 

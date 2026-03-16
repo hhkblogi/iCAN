@@ -25,7 +25,7 @@
 
 #define SHARED_RING_MAGIC           0xCAFECAFEU
 #define SHARED_RING_LAYOUT_VERSION  3
-#define SHARED_RX_CAPACITY          65536   /* 64KB RX data (holds ~885 frames) */
+#define SHARED_RX_CAPACITY          262144  /* 256KB RX data (holds ~3540 frames) */
 #define SHARED_TX_CAPACITY          16384   /* 16KB TX data (holds ~221 frames) */
 #define SHARED_RING_HEADER_SIZE     384
 

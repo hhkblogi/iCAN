@@ -1,12 +1,10 @@
 /*
  * CANClient.cc — CAN client implementation
  *
- * Device builds: IOKit IPC to DriverKit (SharedRingHeader frame ring + WaitForData async)
+ * IOKit IPC to DriverKit (SharedRingHeader frame ring + WaitForData async)
  *   - RX: read structured canfd_frame entries from shared RX ring (no protocol decode)
  *   - TX: write canfd_frame entries to shared TX ring + trigger driver drain
  *   - Channel: OpenChannel/CloseChannel IPC → driver → codec
- *
- * Simulator builds: POSIX serial I/O to /dev/cu.usbmodem* with SLCAN text codec
  */
 
 #include "can_client.h"
@@ -25,11 +23,6 @@
 #include <unistd.h>
 #include <os/log.h>
 
-#if TARGET_OS_SIMULATOR
-#include <glob.h>
-#include <termios.h>
-#include <sys/select.h>
-#else
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <mach/mach_port.h>
@@ -113,132 +106,7 @@ static int count_usb_adapters() {
     }
     return count;
 }
-#endif
 
-/* ================================================================
- * SLCAN text codec (simulator path only — device path uses driver codec)
- * ================================================================ */
-
-static inline char hex_nibble(uint8_t v) {
-    v &= 0x0F;
-    return (v < 10) ? ('0' + v) : ('A' + v - 10);
-}
-
-static inline int hex_val(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
-/// Encode a CAN/FD frame to SLCAN text. Returns bytes written (including \r).
-static uint32_t slcan_encode(const canfd_frame* frame, char* out, uint32_t outSize) {
-    if (!frame || !out || outSize < 8) return 0;
-
-    uint32_t pos = 0;
-    bool isExtended = (frame->can_id & CAN_EFF_FLAG) != 0;
-    bool isFD = (frame->flags & CANFD_FDF) != 0;
-    uint32_t rawId = isExtended ? (frame->can_id & CAN_EFF_MASK)
-                                : (frame->can_id & CAN_SFF_MASK);
-
-    if (isFD) {
-        out[pos++] = isExtended ? 'D' : 'd';
-    } else {
-        out[pos++] = isExtended ? 'T' : 't';
-    }
-
-    if (isExtended) {
-        for (int i = 7; i >= 0; i--)
-            out[pos++] = hex_nibble((rawId >> (i * 4)) & 0x0F);
-    } else {
-        out[pos++] = hex_nibble((rawId >> 8) & 0x0F);
-        out[pos++] = hex_nibble((rawId >> 4) & 0x0F);
-        out[pos++] = hex_nibble(rawId & 0x0F);
-    }
-
-    uint8_t dlc = isFD ? canfd_len_to_dlc(frame->len) : frame->len;
-    out[pos++] = hex_nibble(dlc);
-
-    uint8_t dataLen = frame->len;
-    if (!isFD && dataLen > CAN_MAX_DLEN) dataLen = CAN_MAX_DLEN;
-    if (isFD && dataLen > CANFD_MAX_DLEN) dataLen = CANFD_MAX_DLEN;
-
-    if (pos + dataLen * 2 + 1 > outSize) return 0;
-
-    for (uint8_t i = 0; i < dataLen; i++) {
-        out[pos++] = hex_nibble(frame->data[i] >> 4);
-        out[pos++] = hex_nibble(frame->data[i]);
-    }
-
-    out[pos++] = '\r';
-    return pos;
-}
-
-/// Decode an SLCAN line into a canfd_frame. Returns true on success.
-static bool slcan_decode(const char* buf, uint32_t len, canfd_frame* out) {
-    if (!buf || !out || len < 5) return false;
-
-    memset(out, 0, sizeof(canfd_frame));
-
-    bool isExtended, isFD;
-    switch (buf[0]) {
-        case 't': isExtended = false; isFD = false; break;
-        case 'T': isExtended = true;  isFD = false; break;
-        case 'd': isExtended = false; isFD = true;  break;
-        case 'D': isExtended = true;  isFD = true;  break;
-        default: return false;
-    }
-
-    uint32_t pos = 1;
-    uint32_t idDigits = isExtended ? 8 : 3;
-    if (pos + idDigits + 1 > len) return false;
-
-    canid_t canId = 0;
-    for (uint32_t i = 0; i < idDigits; i++) {
-        int v = hex_val(buf[pos++]);
-        if (v < 0) return false;
-        canId = (canId << 4) | static_cast<uint32_t>(v);
-    }
-    if (isExtended) canId |= CAN_EFF_FLAG;
-    out->can_id = canId;
-
-    int dlcVal = hex_val(buf[pos++]);
-    if (dlcVal < 0 || dlcVal > 15) return false;
-
-    uint8_t dataLen = isFD ? canfd_dlc_to_len(static_cast<uint8_t>(dlcVal))
-                           : static_cast<uint8_t>(dlcVal);
-    if (!isFD && dataLen > CAN_MAX_DLEN) return false;
-    out->len = dataLen;
-    if (isFD) out->flags = CANFD_FDF;
-
-    if (pos + dataLen * 2 > len) return false;
-    for (uint8_t i = 0; i < dataLen; i++) {
-        int hi = hex_val(buf[pos++]);
-        int lo = hex_val(buf[pos++]);
-        if (hi < 0 || lo < 0) return false;
-        out->data[i] = static_cast<uint8_t>((hi << 4) | lo);
-    }
-
-    return true;
-}
-
-/// Map CAN bitrate (bps) to SLCAN 'Sn' command digit.
-static char slcan_bitrate_to_code(uint32_t bitrate) {
-    switch (bitrate) {
-        case 10000:   return '0';
-        case 20000:   return '1';
-        case 50000:   return '2';
-        case 100000:  return '3';
-        case 125000:  return '4';
-        case 250000:  return '5';
-        case 500000:  return '6';
-        case 800000:  return '7';
-        case 1000000: return '8';
-        default:      return 0;
-    }
-}
-
-#if !TARGET_OS_SIMULATOR
 /// Convert nanoseconds to mach absolute time ticks.
 static uint64_t nanosToAbs(uint64_t nanos) {
     // C++ guarantees thread-safe initialization of block-scope statics
@@ -249,14 +117,12 @@ static uint64_t nanosToAbs(uint64_t nanos) {
     }();
     return nanos * sInfo.denom / sInfo.numer;
 }
-#endif
 
 /* ================================================================
  * CANClientImpl — the actual implementation hidden by pimpl
  * ================================================================ */
 
 static constexpr int kErrorBufSize = 256;
-static constexpr int kRxBufSize = 4096;
 static constexpr int kFrameFifoSize = 2048;
 
 class CANClientImpl {
@@ -265,13 +131,9 @@ public:
     bool is_connected = false;
     bool is_open = false;       // CAN channel open
 
-    /* SLCAN RX accumulator (simulator path only) */
-    char rx_line[256] = {};
-    int  rx_line_len = 0;
-
     /* Per-reader decoded frame FIFOs (ring buffers).
      * Each CANClient copy that calls read*() gets its own slot via registerReader().
-     * drainRxFrames/processRxBytes fan out each frame to all active readers on the
+     * drainRxFrames fan out each frame to all active readers on the
      * matching channel, providing SocketCAN-like independent-reader semantics. */
     static constexpr int kMaxChannels = 2;
     static constexpr int kMaxReaders = 8;
@@ -347,18 +209,13 @@ public:
 
     /* Thread safety */
     std::mutex io_lock;
-    std::mutex drain_lock;  // protects drainRxFrames / drainSerial
+    std::mutex drain_lock;  // protects drainRxFrames
     std::atomic<bool> drainer_active{false};   // only one thread does blockForData at a time
     std::atomic<uint32_t> drain_epoch{0};      // bumped after every drainRxFrames; non-drainer atomic::wait on this
 
     /* Error reporting */
     char last_error[kErrorBufSize] = {};
 
-#if TARGET_OS_SIMULATOR
-    /* POSIX serial */
-    int fd = -1;
-    char device_path[256] = {};
-#else
     /* IOKit IPC */
     io_connect_t connection = 0;
 
@@ -369,7 +226,6 @@ public:
     mach_port_t       asyncPort = MACH_PORT_NULL;
     bool              useAsyncNotify = false;
     bool              waitPending = false;
-#endif
 
     ~CANClientImpl() = default;
 
@@ -386,58 +242,6 @@ public:
         last_error[0] = '\0';
     }
 
-#if TARGET_OS_SIMULATOR
-    /* Process raw bytes through SLCAN accumulator, fan out to all active readers.
-     * SLCAN is always single-channel, so frames go to channel 0. */
-    void processRxBytes(const uint8_t* data, uint32_t len) {
-        constexpr int ch = 0;
-        for (uint32_t i = 0; i < len; i++) {
-            char c = static_cast<char>(data[i]);
-            if (c == '\r') {
-                if (rx_line_len > 0) {
-                    canfd_frame frame;
-                    if (slcan_decode(rx_line, static_cast<uint32_t>(rx_line_len), &frame)) {
-                        fanOutFrame(frame, ch);
-                    }
-                }
-                rx_line_len = 0;
-            } else if (c != '\n' && rx_line_len < static_cast<int>(sizeof(rx_line) - 1)) {
-                rx_line[rx_line_len++] = c;
-            }
-        }
-    }
-#endif
-
-#if TARGET_OS_SIMULATOR
-    /* Write all bytes to fd, handling partial writes */
-    ssize_t writeAll(const void* buf, size_t len) {
-        auto* p = static_cast<const uint8_t*>(buf);
-        size_t remaining = len;
-        while (remaining > 0) {
-            ssize_t n = ::write(fd, p, remaining);
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                return -1;
-            }
-            p += n;
-            remaining -= static_cast<size_t>(n);
-        }
-        return static_cast<ssize_t>(len);
-    }
-
-    /* Read available bytes from serial, accumulate lines, decode frames into FIFO.
-     * drain_lock serializes concurrent callers. */
-    void drainSerial() {
-        if (fd < 0) return;
-        std::lock_guard<std::mutex> lock(drain_lock);
-        uint8_t tmp[kRxBufSize];
-        while (true) {
-            ssize_t n = ::read(fd, tmp, sizeof(tmp));
-            if (n <= 0) break;
-            processRxBytes(tmp, static_cast<uint32_t>(n));
-        }
-    }
-#else
     /* ================================================================
      * Device path: frame ring operations
      * ================================================================ */
@@ -683,7 +487,6 @@ public:
 
         return (kr == KERN_SUCCESS) ? static_cast<int>(len) : 0;
     }
-#endif
 };
 
 /* ================================================================
@@ -740,66 +543,6 @@ void CANClient::setChannel(int channel) { _channel = channel; }
 bool CANClient::open(int adapter_index) {
     auto& c = *_impl;
 
-#if TARGET_OS_SIMULATOR
-    // POSIX serial — same as before
-    static const char* patterns[] = {
-        "/dev/cu.SLCAN*",
-        "/dev/cu.usbmodem*",
-        "/dev/cu.usbserial*",
-    };
-    static const int kNumPatterns = sizeof(patterns) / sizeof(patterns[0]);
-
-    struct MatchedPath { char path[256]; };
-    static constexpr int kMaxDevices = 32;
-    MatchedPath matched[kMaxDevices];
-    int totalFound = 0;
-
-    for (int p = 0; p < kNumPatterns && totalFound < kMaxDevices; p++) {
-        glob_t g = {};
-        int rc = glob(patterns[p], 0, nullptr, &g);
-        if (rc == 0) {
-            for (size_t i = 0; i < g.gl_pathc && totalFound < kMaxDevices; i++) {
-                strncpy(matched[totalFound].path, g.gl_pathv[i],
-                        sizeof(matched[totalFound].path) - 1);
-                matched[totalFound].path[sizeof(matched[totalFound].path) - 1] = '\0';
-                totalFound++;
-            }
-        }
-        globfree(&g);
-    }
-
-    if (totalFound == 0) {
-        c.setError("No serial device found");
-        return false;
-    }
-    if (adapter_index >= totalFound) {
-        c.setError("Only %d device(s) found, index %d requested", totalFound, adapter_index);
-        return false;
-    }
-
-    strncpy(c.device_path, matched[adapter_index].path, sizeof(c.device_path) - 1);
-
-    c.fd = ::open(c.device_path, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (c.fd < 0) {
-        c.setError("Failed to open %s: %s", c.device_path, strerror(errno));
-        return false;
-    }
-
-    struct termios tio;
-    if (tcgetattr(c.fd, &tio) == 0) {
-        cfmakeraw(&tio);
-        cfsetspeed(&tio, B115200);
-        tio.c_cc[VMIN] = 0;
-        tio.c_cc[VTIME] = 0;
-        tcsetattr(c.fd, TCSANOW, &tio);
-    }
-    tcflush(c.fd, TCIOFLUSH);
-
-    c.is_connected = true;
-    c.clearError();
-    return true;
-
-#else
     // IOKit IPC — find DriverKit service via USB VID/PID + IORegistry walk
     io_service_t service = 0;
 
@@ -921,7 +664,6 @@ bool CANClient::open(int adapter_index) {
         c.clearError();
     }
     return true;
-#endif
 }
 
 void CANClient::close() {
@@ -935,17 +677,6 @@ void CANClient::close() {
         c.is_open = false;
     }
 
-#if TARGET_OS_SIMULATOR
-    int fd = c.fd;
-    c.fd = -1;
-    c.device_path[0] = '\0';
-
-    if (was_open && fd >= 0) {
-        const char cmd[] = "C\r";
-        ::write(fd, cmd, 2);
-    }
-    if (fd >= 0) ::close(fd);
-#else
     if (was_open && c.connection) {
         // Close CAN channel via codec
         uint64_t input[] = { static_cast<uint64_t>(_channel) };
@@ -972,9 +703,7 @@ void CANClient::close() {
         IOServiceClose(c.connection);
         c.connection = 0;
     }
-#endif
 
-    c.rx_line_len = 0;
     // Reset all reader FIFOs (slots stay registered — owned by CANClient copies)
     for (int i = 0; i < CANClientImpl::kMaxReaders; i++) {
         c.readers[i].head.store(0, std::memory_order_relaxed);
@@ -1006,33 +735,6 @@ int CANClient::setBaudRate(uint32_t baud_rate) {
         return -1;
     }
 
-#if TARGET_OS_SIMULATOR
-    if (c.fd < 0) {
-        c.setError("Not connected");
-        return -1;
-    }
-    speed_t speed;
-    switch (baud_rate) {
-        case 9600:    speed = B9600; break;
-        case 19200:   speed = B19200; break;
-        case 38400:   speed = B38400; break;
-        case 57600:   speed = B57600; break;
-        case 115200:  speed = B115200; break;
-        case 230400:  speed = B230400; break;
-        default:      speed = B115200; break;
-    }
-    struct termios tio;
-    if (tcgetattr(c.fd, &tio) < 0) {
-        c.setError("tcgetattr failed: %s", strerror(errno));
-        return -1;
-    }
-    cfsetspeed(&tio, speed);
-    if (tcsetattr(c.fd, TCSANOW, &tio) < 0) {
-        c.setError("tcsetattr failed: %s", strerror(errno));
-        return -1;
-    }
-    return 0;
-#else
     uint64_t input[] = { baud_rate };
     kern_return_t kr = IOConnectCallScalarMethod(
         c.connection, kCANDriverMethodSetBaudRate, input, 1, nullptr, nullptr);
@@ -1041,7 +743,6 @@ int CANClient::setBaudRate(uint32_t baud_rate) {
         return -1;
     }
     return 0;
-#endif
 }
 
 int CANClient::openChannel(uint32_t bitrate) {
@@ -1051,23 +752,6 @@ int CANClient::openChannel(uint32_t bitrate) {
         return -1;
     }
 
-#if TARGET_OS_SIMULATOR
-    // Simulator: SLCAN text commands via POSIX serial
-    char code = slcan_bitrate_to_code(bitrate);
-    if (code == 0) {
-        c.setError("Unsupported CAN bitrate: %u", bitrate);
-        return -1;
-    }
-
-    char initCmd[16];
-    int cmdLen = snprintf(initCmd, sizeof(initCmd), "C\rS%c\rO\r", code);
-
-    if (c.fd < 0) return -1;
-    if (c.writeAll(initCmd, cmdLen) < 0) {
-        c.setError("Failed to send init commands: %s", strerror(errno));
-        return -1;
-    }
-#else
     // Device: codec-based channel open via IPC (bitrate + channel)
     uint64_t input[] = { bitrate, static_cast<uint64_t>(_channel) };
     kern_return_t kr = IOConnectCallScalarMethod(
@@ -1076,7 +760,6 @@ int CANClient::openChannel(uint32_t bitrate) {
         c.setError("OpenChannel failed: 0x%x", kr);
         return -1;
     }
-#endif
 
     {
         std::lock_guard<std::mutex> lock(c.io_lock);
@@ -1092,10 +775,6 @@ int CANClient::openChannel(uint32_t bitrate) {
             c.readers[i].epoch.store(0, std::memory_order_relaxed);
         }
     }
-    c.rx_line_len = 0;
-#if TARGET_OS_SIMULATOR
-    tcflush(c.fd, TCIFLUSH);
-#endif
 
     c.clearError();
     return 0;
@@ -1109,15 +788,11 @@ int CANClient::closeChannel() {
         c.is_open = false;
     }
 
-#if TARGET_OS_SIMULATOR
-    if (c.fd >= 0) c.writeAll("C\r", 2);
-#else
     if (c.connection) {
         uint64_t input[] = { static_cast<uint64_t>(_channel) };
         IOConnectCallScalarMethod(c.connection, kCANDriverMethodCloseChannel,
                                    input, 1, nullptr, nullptr);
     }
-#endif
     return 0;
 }
 
@@ -1150,18 +825,9 @@ int CANClient::writeClassic(const struct can_frame* frame) {
     CAN_CHANNEL(fd_frame) = static_cast<uint8_t>(_channel);
     memcpy(fd_frame.data, frame->data, copyLen);
 
-#if TARGET_OS_SIMULATOR
-    char buf[256];
-    uint32_t len = slcan_encode(&fd_frame, buf, sizeof(buf));
-    if (len == 0) return 0;
-    if (c.fd < 0) return 0;
-    ssize_t written = c.writeAll(buf, len);
-    return (written > 0) ? 1 : 0;
-#else
     if (!c.writeTxFrame(&fd_frame)) return 0;
     c.triggerTxDrain();
     return 1;
-#endif
 }
 
 int CANClient::write(const struct canfd_frame* frame) {
@@ -1172,18 +838,9 @@ int CANClient::write(const struct canfd_frame* frame) {
     canfd_frame tagged = *frame;
     CAN_CHANNEL(tagged) = static_cast<uint8_t>(_channel);
 
-#if TARGET_OS_SIMULATOR
-    char buf[256];
-    uint32_t len = slcan_encode(&tagged, buf, sizeof(buf));
-    if (len == 0) return 0;
-    if (c.fd < 0) return 0;
-    ssize_t written = c.writeAll(buf, len);
-    return (written > 0) ? 1 : 0;
-#else
     if (!c.writeTxFrame(&tagged)) return 0;
     c.triggerTxDrain();
     return 1;
-#endif
 }
 
 /* ---- Frame read ---- */
@@ -1193,11 +850,7 @@ int CANClient::read(struct canfd_frame* frame) {
     ensureReader();
     auto& c = *_impl;
 
-#if TARGET_OS_SIMULATOR
-    c.drainSerial();
-#else
     c.drainIOKit();
-#endif
     return c.readFrameFromReader(_readerId, frame);
 }
 
@@ -1206,11 +859,7 @@ int CANClient::readMany(struct canfd_frame* frames, int max_frames) {
     ensureReader();
     auto& c = *_impl;
 
-#if TARGET_OS_SIMULATOR
-    c.drainSerial();
-#else
     c.drainIOKit();
-#endif
 
     int count = 0;
     for (int i = 0; i < max_frames; i++) {
@@ -1225,19 +874,6 @@ int CANClient::readManyBlocking(struct canfd_frame* frames, int max_frames, uint
     ensureReader();
     auto& c = *_impl;
 
-#if TARGET_OS_SIMULATOR
-    c.drainSerial();
-    if (c.readerEmpty(_readerId) && timeoutMs > 0 && c.fd >= 0) {
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(c.fd, &rfds);
-        struct timeval tv;
-        tv.tv_sec = timeoutMs / 1000;
-        tv.tv_usec = (timeoutMs % 1000) * 1000;
-        select(c.fd + 1, &rfds, nullptr, nullptr, &tv);
-        c.drainSerial();
-    }
-#else
     // Non-blocking drain first
     {
         std::lock_guard<std::mutex> lock(c.drain_lock);
@@ -1268,7 +904,6 @@ int CANClient::readManyBlocking(struct canfd_frame* frames, int max_frames, uint
             }
         }
     }
-#endif
 
     int count = 0;
     for (int i = 0; i < max_frames; i++) {
@@ -1282,13 +917,7 @@ int CANClient::sendRaw(const void* data, int len) {
     if (!data || len <= 0) return 0;
     auto& c = *_impl;
 
-#if TARGET_OS_SIMULATOR
-    if (c.fd < 0) return 0;
-    ssize_t written = c.writeAll(data, static_cast<size_t>(len));
-    return (written > 0) ? static_cast<int>(written) : 0;
-#else
     return c.sendBytes(data, static_cast<uint32_t>(len));
-#endif
 }
 
 const char* CANClient::lastError() const {
@@ -1298,14 +927,10 @@ const char* CANClient::lastError() const {
 }
 
 uint32_t CANClient::dropCount() const {
-#if TARGET_OS_SIMULATOR
-    return 0;
-#else
     auto& c = *_impl;
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
         return c.ringHeader->rxDropped;
     return 0;
-#endif
 }
 
 bool CANClient::isConnected() const {
