@@ -34,7 +34,6 @@ class CANDashboardViewModel: ObservableObject {
     @Published var availablePorts: [PortInfo] = []
     @Published var selectedBitrate: CANBitrate = .kbps1000
     @Published var canFDEnabled = false
-    @Published var useSimulatedData = false
     @Published var lastError: String?
     
     // Bandwidth Test Properties
@@ -359,11 +358,6 @@ class CANDashboardViewModel: ObservableObject {
         busStatuses[1].isConnected = adapter2.isConnected
         busStatuses[1].isActive = adapter2.isCANOpen
         busStatuses[1].busLoad = adapter2.isCANOpen ? metrics.busLoad * 0.8 : 0
-    }
-    
-    // Sim data generator...
-    private func generateSimulatedMessage() {
-        // Simple mock implementation
     }
     
     func clearMessages() {

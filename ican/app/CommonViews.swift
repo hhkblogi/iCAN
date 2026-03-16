@@ -136,7 +136,7 @@ struct ConnectionBanner: View {
             VStack(alignment: .leading) {
                 Text("No Adapters Connected")
                     .fontWeight(.medium)
-                Text("Connect hardware or enable simulated data")
+                Text("Connect a USB CAN adapter to get started")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -63,19 +63,6 @@ struct ConnectionSheet: View {
                     }
                 }
 
-                // Data Mode
-                Section("Data Source") {
-                    Toggle("Use Simulated Data", isOn: $viewModel.useSimulatedData)
-                    
-                    if viewModel.useSimulatedData {
-                        Text("Simulated data will be injected into the stream for testing without hardware.")
-                            .font(.caption)
-                    } else if !viewModel.isCANOpen {
-                        Text("Connect hardware and open CAN channels to see live data.")
-                            .font(.caption)
-                    }
-                }
-                
                 // Diagnostic Section
                 Section("Driver Diagnostics") {
                     DiagnosticView()

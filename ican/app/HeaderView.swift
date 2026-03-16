@@ -41,21 +41,6 @@ struct HeaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                // Logo
-                HStack(spacing: 10) {
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .mask(Image(systemName: "bolt.car.fill").font(.system(size: 24, weight: .bold)))
-                    .frame(width: 30, height: 30)
-                    
-                    Text("AutoCAN Dashboard")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                }
-                
                 Spacer()
 
                 // CAN Open Status Indicator
