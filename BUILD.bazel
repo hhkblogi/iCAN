@@ -21,7 +21,7 @@ xcodeproj(
     project_name = "iCAN",
     top_level_targets = [
         top_level_target(
-            label = "//:iCAN",
+            label = "//:iCAN_app",
             target_environments = ["device"],
         ),
     ],
@@ -39,7 +39,7 @@ if ! grep -q "$MARKER" "$COPY_SCRIPT" 2>/dev/null; then
 fi
 """,
     associated_extra_files = {
-        "//:iCAN": [
+        "//:iCAN_app": [
             "//usb_can_driver:usb_can_driver.iig",
             "//usb_can_driver:usb_can_driver.cpp",
             "//usb_can_driver:usb_can_user_client.iig",
@@ -78,7 +78,7 @@ xcode_provisioning_profile(
 # =============================================================================
 
 ios_application(
-    name = "iCAN",
+    name = "iCAN_app",
     bundle_id = "com.hhkblogi.ican",
     entitlements = "//ican:iCAN.entitlements",
     families = ["ipad"],
@@ -94,7 +94,7 @@ ios_application(
 
 ios_application_with_dext(
     name = "iCAN_with_dext",
-    app = ":iCAN",
+    app = ":iCAN_app",
     app_name = "iCAN",
     dext = "//usb_can_driver:USBCANDriver",
 )

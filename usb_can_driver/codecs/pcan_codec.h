@@ -260,7 +260,6 @@ public:
         // Mark channels closed — USB disconnect handles device-side cleanup
         for (uint8_t ch = 0; ch < channelCount_; ch++)
             channelOpen_[ch] = false;
-        rxPendingLen_ = 0;
     }
 
     void onTimer(uint64_t now) {}
@@ -300,52 +299,25 @@ public:
         return sendFn(txBuf, txSize);
     }
 
-    // RX processing: parse PCAN TLV stream from EP 0x82, emit CAN frames.
-    // Handles messages split across USB slot boundaries via reassembly buffer.
+    // RX processing: parse PCAN TLV stream from EP 0x82, emit CAN frames
     template <typename FrameFn>
     void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame) {
-        const uint8_t* ptr;
-        const uint8_t* end;
+        const uint8_t* ptr = data;
+        const uint8_t* end = data + len;
 
-        // Reassemble with pending partial message from previous slot
-        uint8_t reassembly[kReassemblyBufSize];
-        if (rxPendingLen_ > 0) {
-            uint32_t copyLen = len;
-            if (rxPendingLen_ + copyLen > kReassemblyBufSize)
-                copyLen = kReassemblyBufSize - rxPendingLen_;
-            memcpy(reassembly, rxPending_, rxPendingLen_);
-            memcpy(reassembly + rxPendingLen_, data, copyLen);
-            ptr = reassembly;
-            end = ptr + rxPendingLen_ + copyLen;
-            rxPendingLen_ = 0;
-        } else {
-            ptr = data;
-            end = data + len;
-        }
-
-        bool endMarker = false;
         while (ptr + sizeof(pucan_msg) <= end) {
             const auto* msg = reinterpret_cast<const pucan_msg*>(ptr);
             uint16_t msgSize = msg->size;
             uint16_t msgType = msg->type;
 
-            if (msgSize == 0) { endMarker = true; break; }
-            if (ptr + msgSize > end) break;        // Truncated — save for next call
+            if (msgSize == 0) break;              // End of message stream
+            if (ptr + msgSize > end) break;        // Truncated
 
             if (msgType == MSG_CAN_RX && msgSize >= sizeof(pucan_rx_msg)) {
                 decodeRxFrame(ptr, msgSize, onFrame);
             }
 
             ptr += msgSize;
-        }
-
-        // Buffer trailing partial message for next call (skip if end marker seen)
-        if (!endMarker) {
-            uint32_t remaining = static_cast<uint32_t>(end - ptr);
-            if (remaining > 0 && remaining <= sizeof(rxPending_)) {
-                memcpy(rxPending_, ptr, remaining);
-                rxPendingLen_ = remaining;
-            }
         }
     }
 
@@ -428,12 +400,6 @@ private:
     static bool calculateBitTiming(uint32_t bitrate,
                                     uint32_t& brp, uint32_t& tseg1,
                                     uint32_t& tseg2, uint32_t& sjw);
-
-    // RX reassembly buffer for messages split across USB slot boundaries.
-    // Max partial = one PCAN message (~92 bytes for CAN FD).
-    static constexpr uint32_t kReassemblyBufSize = 256;
-    uint8_t  rxPending_[kReassemblyBufSize] = {};
-    uint32_t rxPendingLen_ = 0;
 
     // State
     uint8_t  channelCount_ = 2;  // PCAN-USB Pro FD = 2 channels
