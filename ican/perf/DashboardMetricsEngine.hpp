@@ -18,6 +18,7 @@ struct RecentFrame {
     uint8_t  len;
     uint8_t  flags;
     uint8_t  channel;
+    bool     isExtended;
     uint8_t  data[64];
     double   timestampOffset;  // seconds since engine start
 };

@@ -327,7 +327,7 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     private func recentFrameToLogMessage(_ rf: RecentFrame, adapter: String) -> CANLogMessage {
-        let isExt = rf.canId > 0x7FF
+        let isExt = rf.isExtended
         let hexId = isExt
             ? String(format: "0x%08X", rf.canId)
             : String(format: "0x%03X", rf.canId)
