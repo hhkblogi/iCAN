@@ -8,6 +8,7 @@
 
 #import <IOKit/IOKitLib.h>
 #ifdef __cplusplus
+#import "DashboardMetricsEngine.hpp"
 #import "MetricsEngine.hpp"
 #import "TestEngines.hpp"
 #import "can_client.h"
