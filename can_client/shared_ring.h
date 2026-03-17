@@ -50,7 +50,25 @@ struct SharedRingHeader {
     uint8_t  protocolId;      /* CANProtocol enum value */
     uint8_t  channelCount;    /* 1 for SLCAN/gs_usb, 2 for PCAN */
     uint8_t  _reserved[2];
-    uint8_t  _pad0[92];       /* pad to 128 bytes (128 - 36 = 92) */
+
+    /* Codec diagnostic counters (driver writes, app reads).
+     * For PCAN: echo = filtered TX echoes, overrun = firmware FIFO drops,
+     * calibration/error/status = non-CAN protocol messages from firmware. */
+    uint32_t codecEchoCount;        /* offset 36 */
+    uint32_t codecOverrunCount;     /* offset 40 */
+    uint32_t codecCalibrationCount; /* offset 44 */
+    uint32_t codecErrorCount;       /* offset 48 */
+    uint32_t codecStatusCount;      /* offset 52 */
+    uint32_t codecTruncatedCount;   /* offset 56: msgs truncated at USB boundary */
+    uint32_t codecZeroSentinelCount;/* offset 60: zero-size end-of-stream hits */
+
+    /* Live debug snapshot of last USB transfer (driver writes, app reads) */
+    uint32_t dbgTransferSeq;        /* offset 64: transfer sequence number */
+    uint32_t dbgTransferLen;        /* offset 68: USB actualByteCount */
+    uint32_t dbgMsgsParsed;         /* offset 72: CAN frames parsed */
+    uint32_t dbgZerosHit;           /* offset 76: zero sentinels in this transfer */
+    uint8_t  dbgHead[48];           /* offset 80: first 48 bytes of raw transfer */
+                                    /* total: 4+4+4+4+48 = 64, pad0 fully used */
 
     /* --- RX ring control cache line (offset 128, 128 bytes) --- */
     /* Driver produces (writes head), client consumes (writes tail) */

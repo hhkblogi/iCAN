@@ -148,13 +148,15 @@ public:
             framesProcessed++;
         }
 
-        if (framesProcessed > 0) {
-            ring_store_tail_release(txCtrl, tail);
-            __atomic_fetch_add(&hdr->txDrainCount, framesProcessed, __ATOMIC_RELAXED);
-        }
-
         if (slcanLen > 0) {
-            return sendFn(reinterpret_cast<const uint8_t*>(slcanBatch), slcanLen);
+            // Send first, advance tail only on success (prevents silent
+            // frame loss when concurrent DrainTxRing calls race on fTxInFlight).
+            kern_return_t txRet = sendFn(reinterpret_cast<const uint8_t*>(slcanBatch), slcanLen);
+            if (txRet == kIOReturnSuccess && framesProcessed > 0) {
+                ring_store_tail_release(txCtrl, tail);
+                __atomic_fetch_add(&hdr->txDrainCount, framesProcessed, __ATOMIC_RELAXED);
+            }
+            return txRet;
         }
 
         return kIOReturnSuccess;
@@ -163,7 +165,8 @@ public:
     // --- RX processing: accumulate USB bytes, decode lines, emit CAN frames ---
 
     template <typename FrameFn>
-    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame) {
+    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame,
+                       SharedRingHeader* = nullptr) {
         accum_.processBytes(data, len, onFrame);
     }
 

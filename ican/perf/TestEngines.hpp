@@ -35,7 +35,8 @@ public:
     BidirTestEngine& operator=(const BidirTestEngine&);
 
     void startTest(CANClient a1Client, CANClient a2Client,
-                   int messageSize, int burstSize, bool useFD, int bitrate);
+                   int messageSize, int burstSize, bool useFD, int bitrate,
+                   int targetRate = 4000);
     void stopTest();
     BandwidthSnapshot snapshotA1toA2();
     BandwidthSnapshot snapshotA2toA1();

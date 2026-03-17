@@ -1053,7 +1053,7 @@ void USBCANDriver::ReadCompleteBundled_Impl(
                         if (shared_ring::writeRxFrame(ivars->fRingHeader, ivars->fRingHeader->data, frame)) {
                             didWriteFrame = true;
                         }
-                    });
+                    }, ivars->fRingHeader);
                 }, ivars->fCodec);
             }
 
@@ -1067,7 +1067,14 @@ void USBCANDriver::ReadCompleteBundled_Impl(
         ivars->fRxSlotState[idx] = kRxSlotFree;
     }
 
-    // Notify client once after all slots processed
+    // Resubmit freed slots FIRST — minimize the gap where no USB reads
+    // are pending, which causes the adapter's internal FIFO to fill and
+    // drop frames at high message rates (see issue #11).
+    if (ivars->fIsRunning.load()) {
+        SubmitPendingReads();
+    }
+
+    // Notify client after resubmission (IPC can be slow)
     if (didWriteFrame && ivars->fUserClient) {
         ivars->fUserClient->NotifyRxDataAvailable();
     }
@@ -1082,11 +1089,6 @@ void USBCANDriver::ReadCompleteBundled_Impl(
         DEXT_LOG("ReadCompleteBundled: idx=%u count=%u inFlight=%u total=%u",
                  ioCompletionIndex, ioCompletionCount,
                  ivars->fRxSlotsInFlight, ivars->fReadCompleteCount);
-    }
-
-    // Resubmit freed slots
-    if (ivars->fIsRunning.load()) {
-        SubmitPendingReads();
     }
 }
 

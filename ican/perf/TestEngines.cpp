@@ -145,6 +145,12 @@ void BandwidthTestEngine::startTest(CANClient txClient, CANClient rxClient,
     _impl->useFD = useFD;
     _impl->bitrate = bitrate;
 
+    // Flush stale frames from previous test
+    {
+        canfd_frame buf[256];
+        while (_impl->rxClient.readMany(buf, 256) > 0) {}
+    }
+
     pthread_create(&_impl->txThread, nullptr, bandwidthTxThread, _impl.get());
     pthread_create(&_impl->rxThread, nullptr, bandwidthRxThread, _impl.get());
     _impl->threadsRunning = true;
@@ -189,6 +195,7 @@ public:
     int burstSize{1};
     bool useFD{false};
     int bitrate{1000000};
+    int targetRate{4000};   // target msg/s per direction
 };
 
 struct BidirThreadArgs {
@@ -208,8 +215,9 @@ static void* bidirTxThread(void* arg) {
 
     uint64_t counter = 0;
 
-    // Fixed 4 KHz TX rate per direction (250µs per frame × burstSize)
-    uint32_t burstTimeUs = (uint32_t)(impl->burstSize * 250);
+    // Configurable TX rate per direction
+    uint32_t frameTimeUs = (impl->targetRate > 0) ? (1000000 / impl->targetRate) : 250;
+    uint32_t burstTimeUs = impl->burstSize * frameTimeUs;
 
     // Drift-free absolute-time pacing
     uint64_t ticksPerBurst = nanosToAbs((uint64_t)burstTimeUs * 1000);
@@ -283,7 +291,7 @@ BidirTestEngine& BidirTestEngine::operator=(const BidirTestEngine&) = default;
 
 void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
                                  int messageSize, int burstSize,
-                                 bool useFD, int bitrate) {
+                                 bool useFD, int bitrate, int targetRate) {
     _impl->engineA1toA2.reset();
     _impl->engineA2toA1.reset();
     _impl->cancelled = false;
@@ -293,6 +301,7 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
     _impl->burstSize = burstSize;
     _impl->useFD = useFD;
     _impl->bitrate = bitrate;
+    _impl->targetRate = (targetRate > 0) ? targetRate : 4000;
 
     // Allocate args on heap — thread functions delete them
     auto* a1TxArgs = new BidirThreadArgs{_impl.get(), true};
@@ -300,10 +309,21 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
     auto* a2TxArgs = new BidirThreadArgs{_impl.get(), false};
     auto* a2RxArgs = new BidirThreadArgs{_impl.get(), false};
 
-    pthread_create(&_impl->a1TxThread, nullptr, bidirTxThread, a1TxArgs);
+    // Flush stale frames from previous test runs.
+    // Without this, the first frames received have old sequence numbers
+    // from the prior test, causing spurious gap/ooo counts in MetricsEngine.
+    {
+        canfd_frame buf[256];
+        // read() triggers ensureReader() on first call, then drains stale data
+        while (_impl->a1Client.readMany(buf, 256) > 0) {}
+        while (_impl->a2Client.readMany(buf, 256) > 0) {}
+    }
+
+    // Start RX threads first, then TX threads
     pthread_create(&_impl->a1RxThread, nullptr, bidirRxThread, a1RxArgs);
-    pthread_create(&_impl->a2TxThread, nullptr, bidirTxThread, a2TxArgs);
     pthread_create(&_impl->a2RxThread, nullptr, bidirRxThread, a2RxArgs);
+    pthread_create(&_impl->a1TxThread, nullptr, bidirTxThread, a1TxArgs);
+    pthread_create(&_impl->a2TxThread, nullptr, bidirTxThread, a2TxArgs);
     _impl->threadsRunning = true;
 }
 
@@ -429,6 +449,12 @@ void DistBidirTestEngine::startTest(CANClient client,
     _impl->messageSize = messageSize;
     _impl->useFD = useFD;
     _impl->bitrate = bitrate;
+
+    // Flush stale frames from previous test
+    {
+        canfd_frame buf[256];
+        while (_impl->client.readMany(buf, 256) > 0) {}
+    }
 
     pthread_create(&_impl->txThread, nullptr, distBidirTxThread, _impl.get());
     pthread_create(&_impl->rxThread, nullptr, distBidirRxThread, _impl.get());

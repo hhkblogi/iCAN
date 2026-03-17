@@ -67,6 +67,19 @@ bazel build //:iCAN_with_dext              # App + DriverKit extension
 bazel test //...                           # Run all tests
 ```
 
+## Protocol Attribution
+
+The USB protocol codecs in `usb_can_driver/codecs/` are clean-room implementations.
+Protocol constants and wire formats are derived from publicly observable USB traffic
+and the following open-source references:
+
+- **PCAN uCAN protocol:** Linux kernel `drivers/net/can/usb/peak_usb/pcan_usb_fd.c` (GPL-2.0).
+  No code was copied; only the wire-level protocol specification (message types, command
+  opcodes, bit timing register layout) was used as a reference.  The uCAN wire format is
+  a hardware interface specification, not a copyrightable work.
+- **gs_usb protocol:** Linux kernel `drivers/net/can/usb/gs_usb.c` (GPL-2.0). Same approach.
+- **SLCAN protocol:** Public LAWICEL text protocol specification.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.

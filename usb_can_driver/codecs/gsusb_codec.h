@@ -178,18 +178,21 @@ public:
                 continue;
             }
 
-            // Advance ring tail BEFORE sending
-            ring_store_tail_release(txCtrl, tail);
-            __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
-
-            // Send exactly one frame per USB transfer
+            // Send first, advance tail only on success (prevents silent
+            // frame loss when concurrent DrainTxRing calls race on fTxInFlight).
             onTxSent();
-            return sendFn(txFrame, gsFrameSize);
+            kern_return_t txRet = sendFn(txFrame, gsFrameSize);
+            if (txRet == kIOReturnSuccess) {
+                ring_store_tail_release(txCtrl, tail);
+                __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
+            }
+            return txRet;
         }
     }
 
     template <typename FrameFn>
-    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame) {
+    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame,
+                       SharedRingHeader* = nullptr) {
         needsDrainTx_ = false;
         auto rxResult = decodeRxTransfer(data, len);
         if (rxResult.type == RxResult::TxEcho) {

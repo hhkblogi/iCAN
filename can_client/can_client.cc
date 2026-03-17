@@ -210,6 +210,7 @@ public:
     /* Thread safety */
     std::mutex io_lock;
     std::mutex drain_lock;  // protects drainRxFrames
+    std::mutex tx_lock;     // protects writeTxFrame (MPSC: two channels may TX concurrently)
     std::atomic<bool> drainer_active{false};   // only one thread does blockForData at a time
     std::atomic<uint32_t> drain_epoch{0};      // bumped after every drainRxFrames; non-drainer atomic::wait on this
 
@@ -310,9 +311,15 @@ public:
         return count;
     }
 
-    /* Write a canfd_frame to the TX ring. Returns true on success. */
+    /* Write a canfd_frame to the TX ring. Returns true on success.
+     * tx_lock serializes concurrent writers (PCAN dual-channel: two TX threads
+     * share the same SPSC ring via shared CANClientImpl). Without this lock,
+     * both threads can read the same head, write at the same position, and
+     * silently overwrite each other's frames — the root cause of issue #11. */
     bool writeTxFrame(const canfd_frame* frame) {
         if (!ringHeader || ringHeader->magic != SHARED_RING_MAGIC) return false;
+
+        std::lock_guard<std::mutex> lock(tx_lock);
 
         uint16_t frameSize = static_cast<uint16_t>(sizeof(canfd_frame));
         uint32_t entrySize = 2 + frameSize;
@@ -931,6 +938,63 @@ uint32_t CANClient::dropCount() const {
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
         return c.ringHeader->rxDropped;
     return 0;
+}
+
+uint32_t CANClient::codecEchoCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecEchoCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecOverrunCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecOverrunCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecTruncatedCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecTruncatedCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecZeroSentinelCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecZeroSentinelCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::dbgTransferSeq() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return c.ringHeader->dbgTransferSeq;
+    return 0;
+}
+
+uint32_t CANClient::dbgTransferLen() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return c.ringHeader->dbgTransferLen;
+    return 0;
+}
+
+uint32_t CANClient::dbgMsgsParsed() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return c.ringHeader->dbgMsgsParsed;
+    return 0;
+}
+
+void CANClient::dbgHead(uint8_t* out, uint32_t maxLen) const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC) {
+        uint32_t n = (maxLen < 48) ? maxLen : 48;
+        memcpy(out, c.ringHeader->dbgHead, n);
+    }
 }
 
 bool CANClient::isConnected() const {

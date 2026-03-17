@@ -44,12 +44,18 @@ class CANDashboardViewModel: ObservableObject {
     @Published var testMessageSize: Int = 8
     @Published var testUseFD = false
     @Published var testBurstSize: Int = 1
+    @Published var testTargetRate: Int = 4000  // msg/s per direction
     @Published var testDirection: Int = 0  // 0 = A1→A2, 1 = A2→A1
     
     // Bidirectional Test Properties
     @Published var isBidirTestRunning = false
     @Published var bidirStats = BidirTestStats()
     @Published var bidirHistory: [BidirHistoryPoint] = []
+    @Published var pcanDebugLog: String = ""
+    private var lastDbgSeqA1: Int = 0
+    private var lastDbgSeqA2: Int = 0
+    private var lastSeqGapsA1: Int = 0
+    private var lastSeqGapsA2: Int = 0
 
     // Distributed Bidirectional Test Properties
     @Published var isDistBidirTestRunning = false
@@ -461,7 +467,8 @@ class CANDashboardViewModel: ObservableObject {
         bidirEngine = BidirTestEngine()
         bidirEngine.startTest(a1.canClient(), a2.canClient(),
                               Int32(testMessageSize), Int32(testBurstSize),
-                              testUseFD, Int32(selectedBitrate.rawValue))
+                              testUseFD, Int32(selectedBitrate.rawValue),
+                              Int32(testTargetRate))
 
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -479,6 +486,22 @@ class CANDashboardViewModel: ObservableObject {
                 self.bidirStats.a1toA2.rxDuplicates = Int(snap1.rxDuplicates)
                 self.bidirStats.a1toA2.rxDecodeFailures = Int(snap1.rxDecodeFailures)
                 self.bidirStats.a1toA2.duration = snap1.duration
+                // PCAN codec counters (from shared ring header)
+                self.bidirStats.a1toA2.codecEchoCount = Int(a2.canClient().codecEchoCount())
+                self.bidirStats.a1toA2.codecOverrunCount = Int(a2.canClient().codecOverrunCount())
+                self.bidirStats.a1toA2.codecTruncatedCount = Int(a2.canClient().codecTruncatedCount())
+                self.bidirStats.a1toA2.codecZeroSentinelCount = Int(a2.canClient().codecZeroSentinelCount())
+                self.bidirStats.a1toA2.ringRxDropped = Int(a2.canClient().dropCount())
+                // Debug snapshot
+                self.bidirStats.a1toA2.dbgTransferSeq = Int(a2.canClient().dbgTransferSeq())
+                self.bidirStats.a1toA2.dbgTransferLen = Int(a2.canClient().dbgTransferLen())
+                self.bidirStats.a1toA2.dbgMsgsParsed = Int(a2.canClient().dbgMsgsParsed())
+                do {
+                    var buf = [UInt8](repeating: 0, count: 48)
+                    a2.canClient().dbgHead(&buf, 48)
+                    let len = min(Int(a2.canClient().dbgTransferLen()), 48)
+                    self.bidirStats.a1toA2.dbgHeadHex = buf.prefix(len).map { String(format: "%02X", $0) }.joined(separator: " ")
+                }
 
                 let snap2 = self.bidirEngine.snapshotA2toA1()
                 self.bidirStats.a2toA1.messagesSent = Int(snap2.messagesSent)
@@ -493,6 +516,61 @@ class CANDashboardViewModel: ObservableObject {
                 self.bidirStats.a2toA1.rxDuplicates = Int(snap2.rxDuplicates)
                 self.bidirStats.a2toA1.rxDecodeFailures = Int(snap2.rxDecodeFailures)
                 self.bidirStats.a2toA1.duration = snap2.duration
+                // PCAN codec counters (from shared ring header)
+                self.bidirStats.a2toA1.codecEchoCount = Int(a1.canClient().codecEchoCount())
+                self.bidirStats.a2toA1.codecOverrunCount = Int(a1.canClient().codecOverrunCount())
+                self.bidirStats.a2toA1.codecTruncatedCount = Int(a1.canClient().codecTruncatedCount())
+                self.bidirStats.a2toA1.codecZeroSentinelCount = Int(a1.canClient().codecZeroSentinelCount())
+                self.bidirStats.a2toA1.ringRxDropped = Int(a1.canClient().dropCount())
+                // Debug snapshot
+                self.bidirStats.a2toA1.dbgTransferSeq = Int(a1.canClient().dbgTransferSeq())
+                self.bidirStats.a2toA1.dbgTransferLen = Int(a1.canClient().dbgTransferLen())
+                self.bidirStats.a2toA1.dbgMsgsParsed = Int(a1.canClient().dbgMsgsParsed())
+                do {
+                    var buf = [UInt8](repeating: 0, count: 48)
+                    a1.canClient().dbgHead(&buf, 48)
+                    let len = min(Int(a1.canClient().dbgTransferLen()), 48)
+                    self.bidirStats.a2toA1.dbgHeadHex = buf.prefix(len).map { String(format: "%02X", $0) }.joined(separator: " ")
+                }
+
+                // Debug print to Xcode console — every new transfer, flag seq gaps
+                let curSeqA1 = self.bidirStats.a1toA2.dbgTransferSeq
+                let curSeqA2 = self.bidirStats.a2toA1.dbgTransferSeq
+                let curGapsA1 = self.bidirStats.a1toA2.rxSequenceGaps
+                let curGapsA2 = self.bidirStats.a2toA1.rxSequenceGaps
+
+                if curSeqA1 != self.lastDbgSeqA1 {
+                    let hasGap = curGapsA1 > self.lastSeqGapsA1
+                    let gap = hasGap ? " *** GAP +\(curGapsA1 - self.lastSeqGapsA1) ***" : ""
+                    print("A1→A2 #\(curSeqA1) len=\(self.bidirStats.a1toA2.dbgTransferLen) msgs=\(self.bidirStats.a1toA2.dbgMsgsParsed) z=\(self.bidirStats.a1toA2.codecZeroSentinelCount) t=\(self.bidirStats.a1toA2.codecTruncatedCount)\(gap)")
+                    print("  \(self.bidirStats.a1toA2.dbgHeadHex)")
+                    if hasGap {
+                        // On GAP: dump full pipeline state
+                        let s = self.bidirStats.a1toA2
+                        print("  === A1→A2 GAP CONTEXT ===")
+                        print("  sent=\(s.messagesSent) recv=\(s.messagesReceived) gaps=\(s.rxSequenceGaps) ooo=\(s.rxOutOfOrder) dup=\(s.rxDuplicates)")
+                        print("  ringDrop=\(s.ringRxDropped) echo=\(s.codecEchoCount) overrun=\(s.codecOverrunCount)")
+                        print("  calibration=\(Int(a2.canClient().codecZeroSentinelCount()) - s.codecZeroSentinelCount) (delta)")
+                        print("  =========================")
+                    }
+                    self.lastDbgSeqA1 = curSeqA1
+                    self.lastSeqGapsA1 = curGapsA1
+                }
+                if curSeqA2 != self.lastDbgSeqA2 {
+                    let hasGap = curGapsA2 > self.lastSeqGapsA2
+                    let gap = hasGap ? " *** GAP +\(curGapsA2 - self.lastSeqGapsA2) ***" : ""
+                    print("A2→A1 #\(curSeqA2) len=\(self.bidirStats.a2toA1.dbgTransferLen) msgs=\(self.bidirStats.a2toA1.dbgMsgsParsed) z=\(self.bidirStats.a2toA1.codecZeroSentinelCount) t=\(self.bidirStats.a2toA1.codecTruncatedCount)\(gap)")
+                    print("  \(self.bidirStats.a2toA1.dbgHeadHex)")
+                    if hasGap {
+                        let s = self.bidirStats.a2toA1
+                        print("  === A2→A1 GAP CONTEXT ===")
+                        print("  sent=\(s.messagesSent) recv=\(s.messagesReceived) gaps=\(s.rxSequenceGaps) ooo=\(s.rxOutOfOrder) dup=\(s.rxDuplicates)")
+                        print("  ringDrop=\(s.ringRxDropped) echo=\(s.codecEchoCount) overrun=\(s.codecOverrunCount)")
+                        print("  =========================")
+                    }
+                    self.lastDbgSeqA2 = curSeqA2
+                    self.lastSeqGapsA2 = curGapsA2
+                }
 
                 let now = Date()
                 let elapsed = now.timeIntervalSince(self.bidirLastSecond)

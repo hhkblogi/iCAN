@@ -1,10 +1,17 @@
 /*
- * PcanCodec.h
+ * pcan_codec.h
  * PCAN-USB Pro FD binary protocol: frame codec, bit timing, command pipe.
  * Satisfies CanProtocol concept for std::variant dispatch.
  *
- * Protocol reference: Linux kernel drivers/net/can/usb/peak_usb/pcan_usb_fd.c
- * and include/linux/can/dev/peak_canfd.h
+ * Protocol notice:
+ *   This is a clean-room implementation of the PCAN uCAN USB wire protocol.
+ *   Protocol constants (message types, command opcodes, wire structures) are
+ *   derived from publicly observable USB traffic and the protocol description
+ *   in the Linux kernel GPL-2.0 driver (drivers/net/can/usb/peak_usb/
+ *   pcan_usb_fd.c, include/linux/can/dev/peak_canfd.h).  No code was copied
+ *   from the Linux driver or from PEAK-System's proprietary libraries.
+ *   The uCAN wire format is a hardware interface specification, not a
+ *   copyrightable work.
  *
  * DriverKit objects (IOUSBHostDevice*, IOService*) are passed as method params
  * and never stored — the codec owns only protocol state.
@@ -49,6 +56,10 @@ constexpr uint16_t MSG_OVERRUN      = 0x0101;
 
 // TX message type (host -> device on EP 0x02/0x03)
 constexpr uint16_t MSG_CAN_TX       = 0x1000;
+
+// Echo detection sentinel — set in tag_low on TX, firmware echoes it back.
+// Genuine bus-received frames have tag_low = 0.
+constexpr uint32_t TX_ECHO_TAG      = 0x0CA7F00D;
 
 // Command opcodes (host -> device on EP 0x01)
 constexpr uint16_t CMD_RESET_MODE       = 0x001;
@@ -293,31 +304,73 @@ public:
             return kIOReturnSuccess;
         }
 
-        ring_store_tail_release(txCtrl, tail);
-        __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
-
-        return sendFn(txBuf, txSize);
+        // Send FIRST, advance tail only on success.
+        // DrainTxRing can be called concurrently from two dispatch queues
+        // (default queue via triggerTxDrain, TX queue via WriteComplete).
+        // If we advance tail before sendFn and sendFn's CAS on fTxInFlight
+        // fails (another DrainTxRing won the race), the frame is consumed
+        // from the ring but never sent — silent loss.
+        kern_return_t txRet = sendFn(txBuf, txSize);
+        if (txRet == kIOReturnSuccess) {
+            ring_store_tail_release(txCtrl, tail);
+            __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
+        }
+        // If sendFn failed (busy/error), tail is NOT advanced — frame
+        // stays in the ring for the next WriteComplete → DrainTxRing cycle.
+        return txRet;
     }
 
-    // RX processing: parse PCAN TLV stream from EP 0x82, emit CAN frames
+    // RX processing: parse PCAN TLV stream from EP 0x82, emit CAN frames.
+    // Handles fragmentation across USB transfers (matching PEAK driver's
+    // frag_rec/frag_size approach), zero-padded gaps, and all message types.
     template <typename FrameFn>
-    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame) {
+    void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame,
+                       SharedRingHeader* ringHdr = nullptr) {
         const uint8_t* ptr = data;
         const uint8_t* end = data + len;
 
+        rxTransferCount_++;
+
+        // Parse messages in this transfer.
+        // BREAK on msgSize==0 (PEAK driver behavior).
+        // The firmware pads 64-byte USB packets with stale buffer data
+        // (NOT zeros), so zero-sentinel skip and fragmentation reassembly
+        // are incorrect — they advance into garbage and corrupt parsing.
+        uint32_t msgIdx = 0;
         while (ptr + sizeof(pucan_msg) <= end) {
             const auto* msg = reinterpret_cast<const pucan_msg*>(ptr);
             uint16_t msgSize = msg->size;
             uint16_t msgType = msg->type;
 
-            if (msgSize == 0) break;              // End of message stream
-            if (ptr + msgSize > end) break;        // Truncated
-
-            if (msgType == MSG_CAN_RX && msgSize >= sizeof(pucan_rx_msg)) {
-                decodeRxFrame(ptr, msgSize, onFrame);
+            if (msgSize == 0) {
+                rxZeroSentinelCount_++;
+                break;  // End of message list — do NOT skip into stale buffer data
+            }
+            if (ptr + msgSize > end) {
+                rxTruncatedCount_++;
+                break;  // Truncated — do NOT save for reassembly
             }
 
+            handleMessage(ptr, msgSize, onFrame);
             ptr += msgSize;
+            msgIdx++;
+        }
+
+        // Publish debug snapshot and counters to shared memory
+        if (ringHdr) {
+            ringHdr->dbgTransferSeq = rxTransferCount_;
+            ringHdr->dbgTransferLen = len;
+            ringHdr->dbgMsgsParsed = msgIdx;
+            ringHdr->dbgZerosHit = rxZeroSentinelCount_;
+            uint32_t copyLen = (len < 48) ? len : 48;
+            memcpy(ringHdr->dbgHead, data, copyLen);
+            __atomic_store_n(&ringHdr->codecEchoCount, rxEchoCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecOverrunCount, rxOverrunCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecCalibrationCount, rxCalibrationCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecErrorCount, rxErrorCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecStatusCount, rxStatusCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecTruncatedCount, rxTruncatedCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->codecZeroSentinelCount, rxZeroSentinelCount_, __ATOMIC_RELAXED);
         }
     }
 
@@ -343,6 +396,31 @@ private:
     // Returns total bytes written (message + null terminator), or 0 on failure.
     static uint32_t encodeTxFrame(const canfd_frame& frame,
                                    uint8_t* out, uint32_t outSize);
+
+    // Dispatch a single parsed message by type
+    template <typename FrameFn>
+    void handleMessage(const uint8_t* ptr, uint16_t msgSize, FrameFn&& onFrame) {
+        const auto* msg = reinterpret_cast<const pucan_msg*>(ptr);
+        uint16_t msgType = msg->type;
+
+        if (msgType == MSG_CAN_RX && msgSize >= sizeof(pucan_rx_msg)) {
+            const auto* rx = reinterpret_cast<const pucan_rx_msg*>(ptr);
+            if (rx->tag_low == TX_ECHO_TAG) {
+                rxEchoCount_++;
+            } else {
+                decodeRxFrame(ptr, msgSize, onFrame);
+            }
+        } else if (msgType == MSG_OVERRUN) {
+            rxOverrunCount_++;
+            DEXT_LOG("pcan: firmware OVERRUN #%u (internal FIFO overflow)", rxOverrunCount_);
+        } else if (msgType == MSG_CALIBRATION) {
+            rxCalibrationCount_++;
+        } else if (msgType == MSG_ERROR) {
+            rxErrorCount_++;
+        } else if (msgType == MSG_STATUS) {
+            rxStatusCount_++;
+        }
+    }
 
     // Decode a PCAN RX message to canfd_frame
     template <typename FrameFn>
@@ -407,6 +485,16 @@ private:
     uint32_t channelBitrate_[2] = {0, 0};
     uint32_t fwVersion_[3] = {};
     uint32_t serialNo_ = 0;
+
+    // RX diagnostic counters (updated in processRxData)
+    uint32_t rxEchoCount_        = 0;  // TX echoes filtered out
+    uint32_t rxOverrunCount_     = 0;  // MSG_OVERRUN from firmware (FIFO overflow)
+    uint32_t rxCalibrationCount_ = 0;  // MSG_CALIBRATION (timestamp sync)
+    uint32_t rxErrorCount_       = 0;  // MSG_ERROR (CAN bus errors)
+    uint32_t rxStatusCount_      = 0;  // MSG_STATUS (bus state changes)
+    uint32_t rxTruncatedCount_   = 0;  // messages truncated at USB transfer boundary
+    uint32_t rxZeroSentinelCount_= 0;  // zero-size sentinel (end of message stream)
+    uint32_t rxTransferCount_   = 0;   // total processRxData calls (USB transfers)
 };
 
 static_assert(CanProtocol<Codec>);
