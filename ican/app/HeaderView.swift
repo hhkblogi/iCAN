@@ -6,7 +6,7 @@ import os.log
 
 // Dashboard Tabs
 enum DashboardTab: String, CaseIterable {
-    case ports = "Ports"
+    case ports = "Interfaces"
     case dashboard = "Dashboard"
     case messages = "Messages"
     case bandwidth = "Test 1"

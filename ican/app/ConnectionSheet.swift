@@ -5,28 +5,33 @@ struct PortsView: View {
 
     var body: some View {
         Form {
-            // Adapter 1 Section
-            Section("Adapter 1") {
-                AdapterConnectionSection(
-                    adapter: viewModel.adapter1,
-                    availablePorts: viewModel.availablePorts,
-                    onRefresh: { viewModel.refreshPorts() },
-                    onConnect: { viewModel.connectAdapter(viewModel.adapter1) },
-                    onOpenCAN: { viewModel.openCANChannel(for: viewModel.adapter1) },
-                    onCloseCAN: { viewModel.closeCANChannel(for: viewModel.adapter1) }
-                )
-            }
-
-            // Adapter 2 Section
-            Section("Adapter 2") {
-                AdapterConnectionSection(
-                    adapter: viewModel.adapter2,
-                    availablePorts: viewModel.availablePorts,
-                    onRefresh: { viewModel.refreshPorts() },
-                    onConnect: { viewModel.connectAdapter(viewModel.adapter2) },
-                    onOpenCAN: { viewModel.openCANChannel(for: viewModel.adapter2) },
-                    onCloseCAN: { viewModel.closeCANChannel(for: viewModel.adapter2) }
-                )
+            if viewModel.usbAdapters.isEmpty {
+                Section("USB Adapters") {
+                    HStack {
+                        Image(systemName: "cable.connector.slash")
+                            .foregroundColor(.secondary)
+                        Text("No USB CAN adapters detected")
+                            .foregroundColor(.secondary)
+                    }
+                    Button("Refresh") { viewModel.refreshPorts() }
+                        .font(.caption)
+                }
+            } else {
+                ForEach(viewModel.usbAdapters) { adapter in
+                    Section("USB Adapter: \(adapter.name)") {
+                        ForEach(adapter.interfaces) { iface in
+                            InterfaceSection(
+                                iface: iface,
+                                adapter: adapterFor(iface),
+                                onConnect: { viewModel.connectAdapter(adapterFor(iface)) },
+                                onOpenCAN: { viewModel.openCANChannel(for: adapterFor(iface)) },
+                                onCloseCAN: { viewModel.closeCANChannel(for: adapterFor(iface)) }
+                            )
+                        }
+                        Button("Refresh") { viewModel.refreshPorts() }
+                            .font(.caption)
+                    }
+                }
             }
 
             // Diagnostic Section
@@ -35,67 +40,79 @@ struct PortsView: View {
             }
         }
     }
+
+    private func adapterFor(_ iface: CANInterface) -> SerialAdapter {
+        // Match by current selection or assign
+        if viewModel.adapter1.selectedPort == iface.id ||
+           (!viewModel.adapter1.isConnected && viewModel.adapter2.selectedPort != iface.id) {
+            if viewModel.adapter1.selectedPort != iface.id {
+                viewModel.adapter1.selectedPort = iface.id
+                viewModel.adapter1.adapterIndex = iface.deviceIndex
+                viewModel.adapter1.channel = iface.channel
+            }
+            return viewModel.adapter1
+        } else {
+            if viewModel.adapter2.selectedPort != iface.id {
+                viewModel.adapter2.selectedPort = iface.id
+                viewModel.adapter2.adapterIndex = iface.deviceIndex
+                viewModel.adapter2.channel = iface.channel
+            }
+            return viewModel.adapter2
+        }
+    }
 }
 
-// Sub-component for individual adapter connection
-struct AdapterConnectionSection: View {
+// Per-interface section within a USB adapter
+struct InterfaceSection: View {
+    let iface: CANInterface
     @ObservedObject var adapter: SerialAdapter
-    let availablePorts: [PortInfo]
-    let onRefresh: () -> Void
     let onConnect: () -> Void
     let onOpenCAN: () -> Void
     let onCloseCAN: () -> Void
 
     var body: some View {
-        Picker("Port", selection: $adapter.selectedPort) {
-            Text("Select Port").tag("")
-            ForEach(availablePorts) { port in
-                Text(port.name).tag(port.id)
-            }
-        }
-        .onChange(of: adapter.selectedPort) { _, newValue in
-            if let port = availablePorts.first(where: { $0.id == newValue }) {
-                adapter.adapterIndex = port.deviceIndex
-                adapter.channel = port.channel
-            }
-        }
-
+        // Interface header
         HStack {
+            Text(iface.interfaceName)
+                .font(.headline)
+                .monospaced()
+            Text("(\(iface.codec))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Spacer()
+
             if adapter.isConnecting {
                 ProgressView()
                     .frame(width: 10, height: 10)
                 Text("Connecting...")
                     .foregroundColor(.orange)
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.caption)
+            } else if adapter.isConnected {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 8, height: 8)
+                Text("Connected")
+                    .font(.caption)
+                    .foregroundColor(.green)
             } else {
                 Circle()
-                    .fill(adapter.isConnected ? Color.green : Color.red)
-                    .frame(width: 10, height: 10)
-                Text(adapter.isConnected ? "Connected" : "Disconnected")
-                    .foregroundColor(adapter.isConnected ? .green : .red)
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-            }
-
-            Spacer()
-
-            if adapter.isConnected {
-                Button("Disconnect") {
-                    adapter.disconnect()
-                }
-                .foregroundColor(.red)
-            } else {
-                Button("Connect") {
-                    onConnect()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(adapter.selectedPort.isEmpty || adapter.isConnecting)
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                Text("Disconnected")
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
         }
 
+        if !adapter.isConnected {
+            Button("Connect") { onConnect() }
+                .buttonStyle(.borderedProminent)
+                .disabled(adapter.isConnecting)
+        }
+
         if adapter.isConnected {
-            // Per-adapter CAN settings
+            // CAN settings
             Picker("Bitrate", selection: $adapter.selectedBitrate) {
                 ForEach(CANBitrate.allCases) { bitrate in
                     Text(bitrate.description).tag(bitrate)
@@ -106,6 +123,7 @@ struct AdapterConnectionSection: View {
             Toggle("CAN FD", isOn: $adapter.canFDEnabled)
                 .disabled(adapter.isCANOpen)
 
+            // Open/Close CAN
             HStack {
                 if adapter.isCANOpen {
                     HStack(spacing: 6) {
@@ -116,9 +134,7 @@ struct AdapterConnectionSection: View {
                             .font(.subheadline)
                             .foregroundColor(.green)
                     }
-
                     Spacer()
-
                     Button {
                         onCloseCAN()
                     } label: {
@@ -134,6 +150,12 @@ struct AdapterConnectionSection: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
+
+            Button("Disconnect") {
+                adapter.disconnect()
+            }
+            .foregroundColor(.red)
+            .font(.caption)
         }
 
         if let error = adapter.lastError {
@@ -141,10 +163,5 @@ struct AdapterConnectionSection: View {
                 .font(.caption)
                 .foregroundColor(.red)
         }
-
-        Button("Refresh Ports") {
-            onRefresh()
-        }
-        .font(.caption)
     }
 }
