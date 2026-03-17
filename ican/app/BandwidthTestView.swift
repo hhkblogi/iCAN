@@ -3,7 +3,10 @@ import Charts
 
 struct BandwidthTestView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
-    
+
+    private var adapter1IsOpen: Bool { viewModel.adapters.count > 0 && viewModel.adapters[0].isCANOpen }
+    private var adapter2IsOpen: Bool { viewModel.adapters.count > 1 && viewModel.adapters[1].isCANOpen }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -11,20 +14,20 @@ struct BandwidthTestView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Adapter Status")
                         .font(.headline)
-                    
+
                     HStack(spacing: 20) {
                         // Adapter 1 Status
                         VStack(spacing: 8) {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                                 .font(.title)
-                                .foregroundColor(viewModel.adapter1.isCANOpen ? .blue : .red)
+                                .foregroundColor(adapter1IsOpen ? .blue : .red)
                             Text("Adapter 1 (A1)")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            Text(viewModel.adapter1.isCANOpen ? "Ready" : "Closed")
+                            Text(adapter1IsOpen ? "Ready" : "Closed")
                                 .font(.caption)
-                                .foregroundColor(viewModel.adapter1.isCANOpen ? .green : .red)
-                            if viewModel.adapter1.isCANOpen {
+                                .foregroundColor(adapter1IsOpen ? .green : .red)
+                            if adapter1IsOpen {
                                 Text(viewModel.testDirection == 0 ? "TX Node" : "RX Node")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -37,7 +40,7 @@ struct BandwidthTestView: View {
                         .padding()
                         .background(Color.platformSecondaryBackground)
                         .cornerRadius(12)
-                        
+
                         // Directional Arrow
                         VStack {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.right" : "arrow.left")
@@ -47,19 +50,19 @@ struct BandwidthTestView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
-                        
+
                         // Adapter 2 Status
                         VStack(spacing: 8) {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                                 .font(.title)
-                                .foregroundColor(viewModel.adapter2.isCANOpen ? .purple : .red)
+                                .foregroundColor(adapter2IsOpen ? .purple : .red)
                             Text("Adapter 2 (A2)")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            Text(viewModel.adapter2.isCANOpen ? "Ready" : "Closed")
+                            Text(adapter2IsOpen ? "Ready" : "Closed")
                                 .font(.caption)
-                                .foregroundColor(viewModel.adapter2.isCANOpen ? .green : .red)
-                            if viewModel.adapter2.isCANOpen {
+                                .foregroundColor(adapter2IsOpen ? .green : .red)
+                            if adapter2IsOpen {
                                 Text(viewModel.testDirection == 0 ? "RX Node" : "TX Node")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -79,12 +82,12 @@ struct BandwidthTestView: View {
                 .cornerRadius(16)
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                 .padding(.horizontal)
-                
+
                 // Test Configuration
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Test Configuration")
                         .font(.headline)
-                    
+
                     HStack(spacing: 20) {
                         VStack(alignment: .leading) {
                             Text("Direction")
@@ -97,7 +100,7 @@ struct BandwidthTestView: View {
                             .pickerStyle(.segmented)
                             .disabled(viewModel.isBandwidthTestRunning)
                         }
-                        
+
                         VStack(alignment: .leading) {
                             Text("Message Size")
                                 .font(.caption)
@@ -112,7 +115,7 @@ struct BandwidthTestView: View {
                                 if newValue > 8 { viewModel.testUseFD = true }
                             }
                         }
-                        
+
                         VStack(alignment: .leading) {
                             Text("Burst Size")
                                 .font(.caption)
@@ -129,8 +132,8 @@ struct BandwidthTestView: View {
                             .disabled(viewModel.isBandwidthTestRunning)
                         }
                     }
-                    
-                    if !viewModel.adapter1.isCANOpen || !viewModel.adapter2.isCANOpen {
+
+                    if !viewModel.bothTestAdaptersReady {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
@@ -146,7 +149,7 @@ struct BandwidthTestView: View {
                 .cornerRadius(16)
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                 .padding(.horizontal)
-                
+
                 // Controls
                 HStack(spacing: 20) {
                     Button(action: {
@@ -163,12 +166,12 @@ struct BandwidthTestView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(viewModel.isBandwidthTestRunning ? Color.red : (viewModel.adapter1.isCANOpen && viewModel.adapter2.isCANOpen ? Color.blue : Color.gray))
+                        .background(viewModel.isBandwidthTestRunning ? Color.red : (viewModel.bothTestAdaptersReady ? Color.blue : Color.gray))
                         .foregroundColor(.white)
                         .cornerRadius(12)
                     }
-                    .disabled(!viewModel.adapter1.isCANOpen || !viewModel.adapter2.isCANOpen)
-                    
+                    .disabled(!viewModel.bothTestAdaptersReady)
+
                     Button(action: {
                         viewModel.resetBandwidthStats()
                     }) {
@@ -184,7 +187,7 @@ struct BandwidthTestView: View {
                     .disabled(viewModel.isBandwidthTestRunning)
                 }
                 .padding(.horizontal)
-                
+
                 // Real-time Results
                 if viewModel.bandwidthStats.messagesSent > 0 || viewModel.isBandwidthTestRunning {
                     VStack(alignment: .leading, spacing: 16) {
@@ -197,7 +200,7 @@ struct BandwidthTestView: View {
                                 .foregroundColor(.secondary)
                                 .monospacedDigit()
                         }
-                        
+
                         // Performance Metrics Grid
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                             // TX Rate
@@ -217,7 +220,7 @@ struct BandwidthTestView: View {
                             .padding()
                             .background(Color.platformSecondaryBackground)
                             .cornerRadius(12)
-                            
+
                             // RX Rate
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
@@ -235,7 +238,7 @@ struct BandwidthTestView: View {
                             .padding()
                             .background(Color.platformSecondaryBackground)
                             .cornerRadius(12)
-                            
+
                             // Success Rate
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
@@ -257,7 +260,7 @@ struct BandwidthTestView: View {
                             .background(Color.platformSecondaryBackground)
                             .cornerRadius(12)
                         }
-                        
+
                         // Chart Tracking Rates
                         if !viewModel.bandwidthHistory.isEmpty {
                             Chart {
@@ -268,7 +271,7 @@ struct BandwidthTestView: View {
                                         series: .value("Type", "TX")
                                     )
                                     .foregroundStyle(viewModel.testDirection == 0 ? .blue : .purple)
-                                    
+
                                     LineMark(
                                         x: .value("Time", point.timestamp),
                                         y: .value("RX Rate", point.rxRate),
@@ -290,14 +293,14 @@ struct BandwidthTestView: View {
                     .cornerRadius(16)
                     .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                     .padding(.horizontal)
-                    
+
                     // Detailed Statistics
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Cumulative Diagnostics")
                             .font(.headline)
-                        
+
                         Divider()
-                        
+
                         HStack(alignment: .top, spacing: 20) {
                             // Column 1: TX/RX Counters
                             VStack(alignment: .leading, spacing: 12) {
@@ -306,30 +309,30 @@ struct BandwidthTestView: View {
                                 StatRow(title: "Messages Received", value: "\(viewModel.bandwidthStats.messagesReceived)")
                                 StatRow(title: "Bytes Sent", value: "\(viewModel.bandwidthStats.bytesSent)")
                                 StatRow(title: "Bytes Received", value: "\(viewModel.bandwidthStats.bytesReceived)")
-                                
+
                                 let totalSent = max(viewModel.bandwidthStats.messagesSent, 1)
                                 let totalRecv = viewModel.bandwidthStats.messagesReceived
                                 let loss = totalSent > totalRecv ? totalSent - totalRecv : 0
                                 let lossPct = (Double(loss) / Double(totalSent)) * 100
-                                
+
                                 StatRow(title: "Packet Loss", value: String(format: "%d (%.2f%%)", loss, lossPct),
                                         valueColor: loss > 0 ? .red : .primary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            
+
                             // Column 2: Driver Metrics
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Driver Level").font(.subheadline).foregroundColor(.secondary)
                                 StatRow(title: "RX Polls (Total)", value: "\(viewModel.bandwidthStats.rxPolls)")
                                 StatRow(title: "RX Hits (Data)", value: "\(viewModel.bandwidthStats.rxHits)")
                                 StatRow(title: "Raw Bytes Read", value: "\(viewModel.bandwidthStats.rxRawBytes)")
-                                
+
                                 let efficiency = viewModel.bandwidthStats.rxPolls > 0 ?
                                     (Double(viewModel.bandwidthStats.rxHits) / Double(viewModel.bandwidthStats.rxPolls)) * 100 : 0
                                 StatRow(title: "Poll Efficiency", value: String(format: "%.1f%%", efficiency))
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            
+
                             // Column 3: Integrity Metrics
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Data Integrity (C++)").font(.subheadline).foregroundColor(.secondary)
@@ -352,7 +355,7 @@ struct BandwidthTestView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 30) // Extra padding for scrolling
                 }
-                
+
                 Spacer(minLength: 20)
             }
             .padding(.top, 16)
@@ -365,7 +368,7 @@ struct StatRow: View {
     let title: String
     let value: String
     var valueColor: Color = .primary
-    
+
     var body: some View {
         HStack {
             Text(title)

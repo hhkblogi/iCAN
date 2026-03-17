@@ -38,15 +38,14 @@ class CANDashboardViewModel: ObservableObject {
     @Published var busLoadHistory: [BusLoadPoint] = []
     @Published var messageRateHistory: [MessageRatePoint] = []
 
-    // Hardware State
-    @Published var adapter1: SerialAdapter
-    @Published var adapter2: SerialAdapter
+    // Hardware State — dynamic N adapters
+    @Published var adapters: [SerialAdapter] = []
     @Published var availableInterfaces: [CANInterface] = []
     @Published var usbAdapters: [USBAdapter] = []
     @Published var selectedBitrate: CANBitrate = .kbps1000
     @Published var canFDEnabled = false
     @Published var lastError: String?
-    
+
     // Bandwidth Test Properties
     @Published var isBandwidthTestRunning = false
     @Published var bandwidthStats = BandwidthTestStats()
@@ -56,7 +55,7 @@ class CANDashboardViewModel: ObservableObject {
     @Published var testBurstSize: Int = 1
     @Published var testTargetRate: Int = 4000  // msg/s per direction
     @Published var testDirection: Int = 0  // 0 = A1→A2, 1 = A2→A1
-    
+
     // Bidirectional Test Properties
     @Published var isBidirTestRunning = false
     @Published var bidirStats = BidirTestStats()
@@ -74,9 +73,8 @@ class CANDashboardViewModel: ObservableObject {
     private var bidirEngine = BidirTestEngine()
     private var distBidirEngine = DistBidirTestEngine()
 
-    // C++ Dashboard Metrics Engines (background reader threads)
-    private var dashEngine1 = DashboardMetricsEngine()
-    private var dashEngine2 = DashboardMetricsEngine()
+    // C++ Dashboard Metrics Engines (one per adapter, background reader threads)
+    private var dashEngines: [DashboardMetricsEngine] = []
 
     // Timers
     private var bandwidthStatsTimer: Timer?
@@ -90,53 +88,40 @@ class CANDashboardViewModel: ObservableObject {
     private var startTime = Date()
     private var lastRateTime = Date()
     private var cancellables = Set<AnyCancellable>()
-    
+
     var isCANOpen: Bool {
-        adapter1.isCANOpen || adapter2.isCANOpen
+        adapters.contains { $0.isCANOpen }
     }
-    
+
     var connectionStatusColor: Color {
-        if adapter1.isCANOpen || adapter2.isCANOpen {
+        if adapters.contains(where: { $0.isCANOpen }) {
             return .green
-        } else if adapter1.isConnected || adapter2.isConnected {
+        } else if adapters.contains(where: { $0.isConnected }) {
             return .orange
         }
         return .red
     }
-    
+
     var connectionStatusText: String {
-        let connectedCount = (adapter1.isConnected ? 1 : 0) + (adapter2.isConnected ? 1 : 0)
+        let connectedCount = adapters.filter { $0.isConnected }.count
         if connectedCount == 0 {
             return "Disconnected"
         }
         return "\(connectedCount) Connected"
     }
-    
+
     init() {
-        adapter1 = SerialAdapter(name: "can0", adapterIndex: 0)
-        adapter2 = SerialAdapter(name: "can1", adapterIndex: 1)
-        
-        setupBusStatuses()
         refreshPorts()
-        
-        adapter1.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }.store(in: &cancellables)
-        
-        adapter2.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }.store(in: &cancellables)
-        
+        setupBusStatuses()
         startDataCollection()
     }
-    
+
     private func setupBusStatuses() {
-        busStatuses = [
-            BusStatus(name: "can0", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false),
-            BusStatus(name: "can1", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false)
-        ]
+        busStatuses = adapters.map { adapter in
+            BusStatus(name: adapter.name, messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false)
+        }
     }
-    
+
     func refreshPorts() {
         // Scan all known CAN adapter VID/PID pairs
         let knownAdapters: [(adapterName: String, codec: String, vid: Int, pid: Int, channels: Int)] = [
@@ -146,7 +131,7 @@ class CANDashboardViewModel: ObservableObject {
         ]
 
         var interfaces: [CANInterface] = []
-        var adapters: [USBAdapter] = []
+        var usbAdapterList: [USBAdapter] = []
         var deviceIndex = 0
         var canIndex = 0
 
@@ -172,7 +157,7 @@ class CANDashboardViewModel: ObservableObject {
                         adapterInterfaces.append(iface)
                         canIndex += 1
                     }
-                    adapters.append(USBAdapter(
+                    usbAdapterList.append(USBAdapter(
                         name: adapter.adapterName,
                         deviceIndex: deviceIndex,
                         interfaces: adapterInterfaces
@@ -186,32 +171,66 @@ class CANDashboardViewModel: ObservableObject {
         }
 
         availableInterfaces = interfaces
-        usbAdapters = adapters
-        if interfaces.count >= 1 && adapter1.selectedPort.isEmpty {
-            adapter1.selectedPort = interfaces[0].id
-            adapter1.adapterIndex = interfaces[0].deviceIndex
-            adapter1.channel = interfaces[0].channel
+        usbAdapters = usbAdapterList
+
+        // Build adapters array: one SerialAdapter per discovered interface.
+        // Preserve existing adapters that match (by selectedPort) to keep connection state.
+        var newAdapters: [SerialAdapter] = []
+        for iface in interfaces {
+            if let existing = adapters.first(where: { $0.selectedPort == iface.id }) {
+                newAdapters.append(existing)
+            } else {
+                let sa = SerialAdapter(name: iface.interfaceName, adapterIndex: iface.deviceIndex, channel: iface.channel)
+                sa.selectedPort = iface.id
+                newAdapters.append(sa)
+            }
         }
-        if interfaces.count >= 2 && adapter2.selectedPort.isEmpty {
-            adapter2.selectedPort = interfaces[1].id
-            adapter2.adapterIndex = interfaces[1].deviceIndex
-            adapter2.channel = interfaces[1].channel
+
+        // Unsubscribe old, set new adapters, resubscribe
+        cancellables.removeAll()
+
+        // Rebuild dash engines: reuse existing engines for preserved adapters
+        // that have an active CAN channel, create new ones otherwise.
+        var newEngines: [DashboardMetricsEngine] = []
+        for (i, newAdapter) in newAdapters.enumerated() {
+            if let oldIdx = adapters.firstIndex(where: { $0 === newAdapter }),
+               oldIdx < dashEngines.count,
+               newAdapter.isCANOpen {
+                // Preserve running engine for this adapter
+                newEngines.append(dashEngines[oldIdx])
+            } else {
+                newEngines.append(DashboardMetricsEngine())
+            }
         }
+
+        adapters = newAdapters
+        dashEngines = newEngines
+
+        for adapter in adapters {
+            adapter.objectWillChange.sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }.store(in: &cancellables)
+        }
+
+        setupBusStatuses()
     }
-    
+
+    /// Returns the SerialAdapter assigned to a given interface, or nil.
+    func adapterForInterface(_ iface: CANInterface) -> SerialAdapter? {
+        adapters.first { $0.selectedPort == iface.id }
+    }
+
     /// Connect an adapter, sharing the connection if another adapter is already
     /// connected to the same physical device (PCAN dual-channel).
     func connectAdapter(_ adapter: SerialAdapter) {
-        let other = (adapter === adapter1) ? adapter2 : adapter1
+        // Find another adapter on the same physical device that is already connected
+        let other = adapters.first { $0 !== adapter && $0.isConnected && $0.adapterIndex == adapter.adapterIndex }
         os_log(.error, log: dashLog,
-               "connectAdapter(%{public}s): idx=%d ch=%d, other.connected=%d other.idx=%d other.ioClient=%{public}s",
+               "connectAdapter(%{public}s): idx=%d ch=%d, other=%{public}s",
                adapter.name, adapter.adapterIndex, adapter.channel,
-               other.isConnected ? 1 : 0, other.adapterIndex,
-               other.ioClient == nil ? "nil" : "ok")
+               other?.name ?? "nil")
         // Check if the other adapter is connected to the same physical device
-        if other.isConnected,
-           other.adapterIndex == adapter.adapterIndex,
-           let existingClient = other.ioClient {
+        if let other = other, let existingClient = other.ioClient {
             os_log(.error, log: dashLog, "connectAdapter(%{public}s): using shared connection", adapter.name)
             adapter.connectShared(from: existingClient)
         } else {
@@ -221,36 +240,36 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func openCANChannels() {
-        openCANChannel(for: adapter1)
-        openCANChannel(for: adapter2)
+        for adapter in adapters {
+            openCANChannel(for: adapter)
+        }
     }
 
     func closeCANChannels() {
-        closeCANChannel(for: adapter1)
-        closeCANChannel(for: adapter2)
+        for adapter in adapters {
+            closeCANChannel(for: adapter)
+        }
     }
 
     func openCANChannel(for adapter: SerialAdapter) {
         guard adapter.isConnected && !adapter.isCANOpen else { return }
         adapter.openCANChannel(bitrate: adapter.selectedBitrate)
-        if adapter === adapter1, let c = adapter.ioClient {
-            dashEngine1 = DashboardMetricsEngine()
-            dashEngine1.start(c.canClient())
-        } else if adapter === adapter2, let c = adapter.ioClient {
-            dashEngine2 = DashboardMetricsEngine()
-            dashEngine2.start(c.canClient())
+        if let idx = adapters.firstIndex(where: { $0 === adapter }), let c = adapter.ioClient {
+            dashEngines[idx] = DashboardMetricsEngine()
+            dashEngines[idx].start(c.canClient())
         }
         updateBusStatuses()
     }
 
     func closeCANChannel(for adapter: SerialAdapter) {
         guard adapter.isCANOpen else { return }
-        if adapter === adapter1 { dashEngine1.stop() }
-        else if adapter === adapter2 { dashEngine2.stop() }
+        if let idx = adapters.firstIndex(where: { $0 === adapter }) {
+            dashEngines[idx].stop()
+        }
         adapter.closeCANChannel()
         updateBusStatuses()
     }
-    
+
     private func startDataCollection() {
         // Single snapshot timer — polls C++ engines every 300ms
         snapshotTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
@@ -261,93 +280,92 @@ class CANDashboardViewModel: ObservableObject {
     private func pollSnapshots() {
         guard isLive else { return }
 
-        let snap1 = dashEngine1.snapshot()
-        let snap2 = dashEngine2.snapshot()
+        // Collect snapshots from all engines (indexed access required for mutating C++ methods)
+        let snapshots = (0..<dashEngines.count).map { dashEngines[$0].snapshot() }
 
         // Drain per-second rate counters
         let now = Date()
         let elapsed = now.timeIntervalSince(lastRateTime)
 
         if elapsed >= 0.9 {
-            let rate1 = dashEngine1.drainRateCounters()
-            let rate2 = dashEngine2.drainRateCounters()
+            let rates = (0..<dashEngines.count).map { dashEngines[$0].drainRateCounters() }
 
-            let totalMsgRate = (Double(rate1.messages) + Double(rate2.messages)) / elapsed
-            let totalByteRate = (Double(rate1.bytes) + Double(rate2.bytes)) / elapsed
+            let totalMsgRate = rates.reduce(0.0) { $0 + Double($1.messages) } / elapsed
+            let totalByteRate = rates.reduce(0.0) { $0 + Double($1.bytes) } / elapsed
 
             metrics.messageRate = totalMsgRate
             metrics.throughput = totalByteRate / 1024.0
 
             let bitsPerFrame = 130.0
-            let bus0Capacity = max(Double(adapter1.selectedBitrate.rawValue), 1.0)
-            let bus1Capacity = max(Double(adapter2.selectedBitrate.rawValue), 1.0)
-            let rate1MsgSec = Double(rate1.messages) / elapsed
-            let rate2MsgSec = Double(rate2.messages) / elapsed
-            let bus0Load = min(rate1MsgSec * bitsPerFrame / bus0Capacity * 100, 100)
-            let bus1Load = min(rate2MsgSec * bitsPerFrame / bus1Capacity * 100, 100)
-            metrics.busLoad = max(bus0Load, bus1Load)
 
-            busStatuses[0].messageRate = rate1MsgSec
-            busStatuses[1].messageRate = rate2MsgSec
+            // Per-bus load and rate
+            var busLoads: [Double] = []
+            for i in 0..<adapters.count {
+                let capacity = max(Double(adapters[i].selectedBitrate.rawValue), 1.0)
+                let rateMsgSec = Double(rates[i].messages) / elapsed
+                let load = min(rateMsgSec * bitsPerFrame / capacity * 100, 100)
+                busLoads.append(load)
+                if i < busStatuses.count {
+                    busStatuses[i].messageRate = rateMsgSec
+                }
+            }
+            metrics.busLoad = busLoads.max() ?? 0
 
             messageRateHistory.append(MessageRatePoint(timestamp: now, messageRate: totalMsgRate))
             if messageRateHistory.count > 60 { messageRateHistory.removeFirst() }
 
+            // Bus load history: use first two buses for chart compatibility, zero-fill if fewer
+            let bus0Load = busLoads.count > 0 ? busLoads[0] : 0
+            let bus1Load = busLoads.count > 1 ? busLoads[1] : 0
             busLoadHistory.append(BusLoadPoint(timestamp: now, bus0Load: bus0Load, bus1Load: bus1Load))
             if busLoadHistory.count > 60 { busLoadHistory.removeFirst() }
 
-            messageDistribution.append(MessageDistPoint(timestamp: now, count: Int(rate1.messages + rate2.messages)))
+            let totalMessages = rates.reduce(UInt64(0)) { $0 + UInt64($1.messages) }
+            messageDistribution.append(MessageDistPoint(timestamp: now, count: Int(totalMessages)))
             if messageDistribution.count > 30 { messageDistribution.removeFirst() }
 
             lastRateTime = now
         }
 
         // Cumulative metrics
-        metrics.messagesReceived = Int(snap1.totalMessages + snap2.totalMessages)
+        let totalMessages = snapshots.reduce(UInt64(0)) { $0 + $1.totalMessages }
+        let totalUniqueIds = snapshots.reduce(UInt32(0)) { $0 + UInt32($1.uniqueIdCount) }
+        metrics.messagesReceived = Int(totalMessages)
         metrics.uptime = now.timeIntervalSince(startTime)
-        metrics.activeNodes = Int(snap1.uniqueIdCount + snap2.uniqueIdCount)
+        metrics.activeNodes = Int(totalUniqueIds)
 
-        busStatuses[0].messageCount = Int(snap1.totalMessages)
-        busStatuses[1].messageCount = Int(snap2.totalMessages)
+        for i in 0..<min(snapshots.count, busStatuses.count) {
+            busStatuses[i].messageCount = Int(snapshots[i].totalMessages)
+        }
 
         // ID distribution (top 10 from C++ snapshots)
         var combined: [CANIdDistribution] = []
-        withUnsafeBytes(of: snap1.topIds) { buf in
-            for i in 0..<Int(snap1.topIdCount) {
-                let entry = buf.load(fromByteOffset: i * MemoryLayout<CanIdCount>.stride, as: CanIdCount.self)
-                let hexId = entry.isExtended
-                    ? String(format: "0x%08X", entry.canId)
-                    : String(format: "0x%03X", entry.canId)
-                combined.append(CANIdDistribution(canId: hexId, count: Int(entry.count)))
-            }
-        }
-        withUnsafeBytes(of: snap2.topIds) { buf in
-            for i in 0..<Int(snap2.topIdCount) {
-                let entry = buf.load(fromByteOffset: i * MemoryLayout<CanIdCount>.stride, as: CanIdCount.self)
-                let hexId = entry.isExtended
-                    ? String(format: "0x%08X", entry.canId)
-                    : String(format: "0x%03X", entry.canId)
-                if let idx = combined.firstIndex(where: { $0.canId == hexId }) {
-                    combined[idx] = CANIdDistribution(canId: hexId, count: combined[idx].count + Int(entry.count))
-                } else {
-                    combined.append(CANIdDistribution(canId: hexId, count: Int(entry.count)))
+        for snap in snapshots {
+            withUnsafeBytes(of: snap.topIds) { buf in
+                for i in 0..<Int(snap.topIdCount) {
+                    let entry = buf.load(fromByteOffset: i * MemoryLayout<CanIdCount>.stride, as: CanIdCount.self)
+                    let hexId = entry.isExtended
+                        ? String(format: "0x%08X", entry.canId)
+                        : String(format: "0x%03X", entry.canId)
+                    if let idx = combined.firstIndex(where: { $0.canId == hexId }) {
+                        combined[idx] = CANIdDistribution(canId: hexId, count: combined[idx].count + Int(entry.count))
+                    } else {
+                        combined.append(CANIdDistribution(canId: hexId, count: Int(entry.count)))
+                    }
                 }
             }
         }
         idDistribution = combined.sorted { $0.count > $1.count }.prefix(10).map { $0 }
 
-        // Recent messages from C++ circular buffer
+        // Recent messages from C++ circular buffers
         var newMessages: [CANLogMessage] = []
-        withUnsafeBytes(of: snap1.recentFrames) { buf in
-            for i in 0..<min(Int(snap1.recentFrameCount), 100) {
-                let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "can0", snapDuration: snap1.duration))
-            }
-        }
-        withUnsafeBytes(of: snap2.recentFrames) { buf in
-            for i in 0..<min(Int(snap2.recentFrameCount), 100) {
-                let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "can1", snapDuration: snap2.duration))
+        for (i, snap) in snapshots.enumerated() {
+            let adapterName = i < adapters.count ? adapters[i].name : "can\(i)"
+            withUnsafeBytes(of: snap.recentFrames) { buf in
+                for j in 0..<min(Int(snap.recentFrameCount), 100) {
+                    let rf = buf.load(fromByteOffset: j * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
+                    newMessages.append(recentFrameToLogMessage(rf, adapter: adapterName, snapDuration: snap.duration))
+                }
             }
         }
         newMessages.sort { $0.timestamp > $1.timestamp }
@@ -380,20 +398,19 @@ class CANDashboardViewModel: ObservableObject {
             direction: "RX"
         )
     }
-    
+
     private func updateBusStatuses() {
-        busStatuses[0].isConnected = adapter1.isConnected
-        busStatuses[0].isActive = adapter1.isCANOpen
-        busStatuses[0].busLoad = adapter1.isCANOpen ? metrics.busLoad : 0
-        
-        busStatuses[1].isConnected = adapter2.isConnected
-        busStatuses[1].isActive = adapter2.isCANOpen
-        busStatuses[1].busLoad = adapter2.isCANOpen ? metrics.busLoad * 0.8 : 0
+        for i in 0..<min(adapters.count, busStatuses.count) {
+            busStatuses[i].isConnected = adapters[i].isConnected
+            busStatuses[i].isActive = adapters[i].isCANOpen
+            busStatuses[i].busLoad = adapters[i].isCANOpen ? metrics.busLoad : 0
+        }
     }
-    
+
     func clearMessages() {
-        dashEngine1.reset()
-        dashEngine2.reset()
+        for i in 0..<dashEngines.count {
+            dashEngines[i].reset()
+        }
         messages.removeAll()
         errorCount = 0
         idDistribution.removeAll()
@@ -401,15 +418,31 @@ class CANDashboardViewModel: ObservableObject {
         busLoadHistory.removeAll()
         messageDistribution.removeAll()
     }
-    
+
     // MARK: - Tests
-    
+
+    /// Convenience accessors for tests that need exactly 2 adapters.
+    private var testAdapter1: SerialAdapter? { adapters.count > 0 ? adapters[0] : nil }
+    private var testAdapter2: SerialAdapter? { adapters.count > 1 ? adapters[1] : nil }
+
+    /// Whether the first two adapters are both CAN-open (required for 2-adapter tests).
+    var bothTestAdaptersReady: Bool {
+        guard let a1 = testAdapter1, let a2 = testAdapter2 else { return false }
+        return a1.isCANOpen && a2.isCANOpen
+    }
+
+    /// Whether the first adapter is CAN-open (required for single-adapter tests).
+    var firstAdapterReady: Bool {
+        testAdapter1?.isCANOpen ?? false
+    }
+
     func startBandwidthTest() {
-        guard adapter1.isCANOpen && adapter2.isCANOpen else { return }
+        guard let a1 = testAdapter1, let a2 = testAdapter2,
+              a1.isCANOpen && a2.isCANOpen else { return }
         guard !isBandwidthTestRunning && !isBidirTestRunning && !isDistBidirTestRunning else { return }
 
-        let txAdapter = testDirection == 0 ? adapter1.ioClient : adapter2.ioClient
-        let rxAdapter = testDirection == 0 ? adapter2.ioClient : adapter1.ioClient
+        let txAdapter = testDirection == 0 ? a1.ioClient : a2.ioClient
+        let rxAdapter = testDirection == 0 ? a2.ioClient : a1.ioClient
 
         guard let txC = txAdapter, let rxC = rxAdapter else {
             lastError = "Adapters not available for bandwidth test"
@@ -457,24 +490,25 @@ class CANDashboardViewModel: ObservableObject {
             }
         }
     }
-    
+
     func stopBandwidthTest() {
         bandwidthEngine.stopTest()
         bandwidthStatsTimer?.invalidate()
         bandwidthStatsTimer = nil
         isBandwidthTestRunning = false
     }
-    
+
     func resetBandwidthStats() {
         bandwidthStats.reset()
         bandwidthHistory.removeAll()
     }
-    
+
     func startBidirTest() {
-        guard adapter1.isCANOpen && adapter2.isCANOpen else { return }
+        guard let a1 = testAdapter1, let a2 = testAdapter2,
+              a1.isCANOpen && a2.isCANOpen else { return }
         guard !isBidirTestRunning && !isBandwidthTestRunning && !isDistBidirTestRunning else { return }
 
-        guard let a1 = adapter1.ioClient, let a2 = adapter2.ioClient else {
+        guard let c1 = a1.ioClient, let c2 = a2.ioClient else {
             lastError = "Adapters not available for bidir test"
             return
         }
@@ -486,7 +520,7 @@ class CANDashboardViewModel: ObservableObject {
         bidirLastSecond = Date()
 
         bidirEngine = BidirTestEngine()
-        bidirEngine.startTest(a1.canClient(), a2.canClient(),
+        bidirEngine.startTest(c1.canClient(), c2.canClient(),
                               Int32(testMessageSize), Int32(testBurstSize),
                               testUseFD, Int32(selectedBitrate.rawValue),
                               Int32(testTargetRate))
@@ -494,6 +528,7 @@ class CANDashboardViewModel: ObservableObject {
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+                guard let c1 = self.testAdapter1?.ioClient, let c2 = self.testAdapter2?.ioClient else { return }
                 let snap1 = self.bidirEngine.snapshotA1toA2()
                 self.bidirStats.a1toA2.messagesSent = Int(snap1.messagesSent)
                 self.bidirStats.a1toA2.messagesReceived = Int(snap1.messagesReceived)
@@ -508,19 +543,19 @@ class CANDashboardViewModel: ObservableObject {
                 self.bidirStats.a1toA2.rxDecodeFailures = Int(snap1.rxDecodeFailures)
                 self.bidirStats.a1toA2.duration = snap1.duration
                 // PCAN codec counters (from shared ring header)
-                self.bidirStats.a1toA2.codecEchoCount = Int(a2.canClient().codecEchoCount())
-                self.bidirStats.a1toA2.codecOverrunCount = Int(a2.canClient().codecOverrunCount())
-                self.bidirStats.a1toA2.codecTruncatedCount = Int(a2.canClient().codecTruncatedCount())
-                self.bidirStats.a1toA2.codecZeroSentinelCount = Int(a2.canClient().codecZeroSentinelCount())
-                self.bidirStats.a1toA2.ringRxDropped = Int(a2.canClient().dropCount())
+                self.bidirStats.a1toA2.codecEchoCount = Int(c2.canClient().codecEchoCount())
+                self.bidirStats.a1toA2.codecOverrunCount = Int(c2.canClient().codecOverrunCount())
+                self.bidirStats.a1toA2.codecTruncatedCount = Int(c2.canClient().codecTruncatedCount())
+                self.bidirStats.a1toA2.codecZeroSentinelCount = Int(c2.canClient().codecZeroSentinelCount())
+                self.bidirStats.a1toA2.ringRxDropped = Int(c2.canClient().dropCount())
                 // Debug snapshot
-                self.bidirStats.a1toA2.dbgTransferSeq = Int(a2.canClient().dbgTransferSeq())
-                self.bidirStats.a1toA2.dbgTransferLen = Int(a2.canClient().dbgTransferLen())
-                self.bidirStats.a1toA2.dbgMsgsParsed = Int(a2.canClient().dbgMsgsParsed())
+                self.bidirStats.a1toA2.dbgTransferSeq = Int(c2.canClient().dbgTransferSeq())
+                self.bidirStats.a1toA2.dbgTransferLen = Int(c2.canClient().dbgTransferLen())
+                self.bidirStats.a1toA2.dbgMsgsParsed = Int(c2.canClient().dbgMsgsParsed())
                 do {
                     var buf = [UInt8](repeating: 0, count: 48)
-                    a2.canClient().dbgHead(&buf, 48)
-                    let len = min(Int(a2.canClient().dbgTransferLen()), 48)
+                    c2.canClient().dbgHead(&buf, 48)
+                    let len = min(Int(c2.canClient().dbgTransferLen()), 48)
                     self.bidirStats.a1toA2.dbgHeadHex = buf.prefix(len).map { String(format: "%02X", $0) }.joined(separator: " ")
                 }
 
@@ -538,19 +573,19 @@ class CANDashboardViewModel: ObservableObject {
                 self.bidirStats.a2toA1.rxDecodeFailures = Int(snap2.rxDecodeFailures)
                 self.bidirStats.a2toA1.duration = snap2.duration
                 // PCAN codec counters (from shared ring header)
-                self.bidirStats.a2toA1.codecEchoCount = Int(a1.canClient().codecEchoCount())
-                self.bidirStats.a2toA1.codecOverrunCount = Int(a1.canClient().codecOverrunCount())
-                self.bidirStats.a2toA1.codecTruncatedCount = Int(a1.canClient().codecTruncatedCount())
-                self.bidirStats.a2toA1.codecZeroSentinelCount = Int(a1.canClient().codecZeroSentinelCount())
-                self.bidirStats.a2toA1.ringRxDropped = Int(a1.canClient().dropCount())
+                self.bidirStats.a2toA1.codecEchoCount = Int(c1.canClient().codecEchoCount())
+                self.bidirStats.a2toA1.codecOverrunCount = Int(c1.canClient().codecOverrunCount())
+                self.bidirStats.a2toA1.codecTruncatedCount = Int(c1.canClient().codecTruncatedCount())
+                self.bidirStats.a2toA1.codecZeroSentinelCount = Int(c1.canClient().codecZeroSentinelCount())
+                self.bidirStats.a2toA1.ringRxDropped = Int(c1.canClient().dropCount())
                 // Debug snapshot
-                self.bidirStats.a2toA1.dbgTransferSeq = Int(a1.canClient().dbgTransferSeq())
-                self.bidirStats.a2toA1.dbgTransferLen = Int(a1.canClient().dbgTransferLen())
-                self.bidirStats.a2toA1.dbgMsgsParsed = Int(a1.canClient().dbgMsgsParsed())
+                self.bidirStats.a2toA1.dbgTransferSeq = Int(c1.canClient().dbgTransferSeq())
+                self.bidirStats.a2toA1.dbgTransferLen = Int(c1.canClient().dbgTransferLen())
+                self.bidirStats.a2toA1.dbgMsgsParsed = Int(c1.canClient().dbgMsgsParsed())
                 do {
                     var buf = [UInt8](repeating: 0, count: 48)
-                    a1.canClient().dbgHead(&buf, 48)
-                    let len = min(Int(a1.canClient().dbgTransferLen()), 48)
+                    c1.canClient().dbgHead(&buf, 48)
+                    let len = min(Int(c1.canClient().dbgTransferLen()), 48)
                     self.bidirStats.a2toA1.dbgHeadHex = buf.prefix(len).map { String(format: "%02X", $0) }.joined(separator: " ")
                 }
 
@@ -577,14 +612,14 @@ class CANDashboardViewModel: ObservableObject {
             }
         }
     }
-    
+
     func stopBidirTest() {
         bidirEngine.stopTest()
         bidirStatsTimer?.invalidate()
         bidirStatsTimer = nil
         isBidirTestRunning = false
     }
-    
+
     func resetBidirStats() {
         bidirStats.reset()
         bidirHistory.removeAll()
@@ -593,10 +628,10 @@ class CANDashboardViewModel: ObservableObject {
     // MARK: - Distributed Bidirectional Test
 
     func startDistBidirTest() {
-        guard adapter1.isCANOpen else { return }
+        guard let a1 = testAdapter1, a1.isCANOpen else { return }
         guard !isDistBidirTestRunning && !isBandwidthTestRunning && !isBidirTestRunning else { return }
 
-        guard let a1 = adapter1.ioClient else {
+        guard let c1 = a1.ioClient else {
             lastError = "Adapter not available for dist bidir test"
             return
         }
@@ -615,7 +650,7 @@ class CANDashboardViewModel: ObservableObject {
         distBidirLastSecond = Date()
 
         distBidirEngine = DistBidirTestEngine()
-        distBidirEngine.startTest(a1.canClient(), txCanId, rxCanId,
+        distBidirEngine.startTest(c1.canClient(), txCanId, rxCanId,
                                   Int32(testMessageSize), testUseFD,
                                   Int32(selectedBitrate.rawValue))
 

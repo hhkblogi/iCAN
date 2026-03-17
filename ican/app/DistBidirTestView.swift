@@ -11,6 +11,9 @@ struct DistBidirTestView: View {
         viewModel.distBidirRole == 0 ? "0x201" : "0x200"
     }
 
+    private var firstAdapterIsOpen: Bool { viewModel.firstAdapterReady }
+    private var firstAdapterIsConnected: Bool { viewModel.adapters.count > 0 && viewModel.adapters[0].isConnected }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -44,14 +47,14 @@ struct DistBidirTestView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "arrow.up.arrow.down.circle.fill")
                             .font(.title)
-                            .foregroundColor(viewModel.adapter1.isCANOpen ? .green : .red)
+                            .foregroundColor(firstAdapterIsOpen ? .green : .red)
                         Text("Adapter 1")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                        Text(viewModel.adapter1.isCANOpen ? "Ready" : (viewModel.adapter1.isConnected ? "Connected (CAN Closed)" : "Disconnected"))
+                        Text(firstAdapterIsOpen ? "Ready" : (firstAdapterIsConnected ? "Connected (CAN Closed)" : "Disconnected"))
                             .font(.caption)
-                            .foregroundColor(viewModel.adapter1.isCANOpen ? .green : .red)
-                        if viewModel.adapter1.isCANOpen {
+                            .foregroundColor(firstAdapterIsOpen ? .green : .red)
+                        if firstAdapterIsOpen {
                             Text("TX: \(txCanIdHex) / RX: \(rxCanIdHex)")
                                 .font(.caption2)
                                 .padding(.horizontal, 8)
@@ -159,7 +162,7 @@ struct DistBidirTestView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
-                        .disabled(!viewModel.adapter1.isCANOpen)
+                        .disabled(!firstAdapterIsOpen)
                     } else {
                         Button {
                             viewModel.stopDistBidirTest()
@@ -186,7 +189,7 @@ struct DistBidirTestView: View {
                 }
                 .padding(.horizontal)
 
-                if !viewModel.adapter1.isCANOpen {
+                if !firstAdapterIsOpen {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
