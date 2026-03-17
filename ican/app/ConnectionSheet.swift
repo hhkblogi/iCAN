@@ -105,57 +105,52 @@ struct InterfaceSection: View {
             }
         }
 
-        if !adapter.isConnected {
-            Button("Connect") { onConnect() }
-                .buttonStyle(.borderedProminent)
-                .disabled(adapter.isConnecting)
-        }
-
-        if adapter.isConnected {
-            // CAN settings
-            Picker("Bitrate", selection: $adapter.selectedBitrate) {
-                ForEach(CANBitrate.allCases) { bitrate in
-                    Text(bitrate.description).tag(bitrate)
-                }
+        // CAN settings (always visible, disabled when CAN is open)
+        Picker("Bitrate", selection: $adapter.selectedBitrate) {
+            ForEach(CANBitrate.allCases) { bitrate in
+                Text(bitrate.description).tag(bitrate)
             }
+        }
+        .disabled(adapter.isCANOpen)
+
+        Toggle("CAN FD", isOn: $adapter.canFDEnabled)
             .disabled(adapter.isCANOpen)
 
-            Toggle("CAN FD", isOn: $adapter.canFDEnabled)
-                .disabled(adapter.isCANOpen)
-
-            // Open/Close CAN
-            HStack {
-                if adapter.isCANOpen {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 8, height: 8)
-                        Text("CAN Open")
-                            .font(.subheadline)
-                            .foregroundColor(.green)
-                    }
-                    Spacer()
-                    Button {
-                        onCloseCAN()
-                    } label: {
-                        Label("Close", systemImage: "stop.fill")
-                    }
-                    .foregroundColor(.orange)
-                } else {
-                    Button {
-                        onOpenCAN()
-                    } label: {
-                        Label("Open CAN", systemImage: "play.fill")
-                    }
+        // Actions row
+        HStack {
+            if !adapter.isConnected {
+                Button("Connect") { onConnect() }
                     .buttonStyle(.borderedProminent)
+                    .disabled(adapter.isConnecting)
+            } else if adapter.isCANOpen {
+                HStack(spacing: 6) {
+                    Circle().fill(.green).frame(width: 8, height: 8)
+                    Text("CAN Open").font(.caption).foregroundColor(.green)
                 }
-            }
 
-            Button("Disconnect") {
-                adapter.disconnect()
+                Spacer()
+
+                Button { onCloseCAN() } label: {
+                    Label("Close CAN", systemImage: "stop.fill")
+                }
+                .foregroundColor(.orange)
+                .font(.caption)
+
+                Button("Disconnect") { adapter.disconnect() }
+                    .foregroundColor(.red)
+                    .font(.caption)
+            } else {
+                Button { onOpenCAN() } label: {
+                    Label("Open CAN", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+
+                Button("Disconnect") { adapter.disconnect() }
+                    .foregroundColor(.red)
+                    .font(.caption)
             }
-            .foregroundColor(.red)
-            .font(.caption)
         }
 
         if let error = adapter.lastError {
