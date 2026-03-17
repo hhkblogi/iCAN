@@ -25,7 +25,7 @@ struct canfd_frame;
 
 #define TX_BUFFER_SIZE      4096
 #define RX_RING_SIZE        16       // slots in MemoryDescriptorRing (kIOUSBHostPipeBundlingMax)
-#define RX_SLOT_SIZE        2048     // bytes per slot (2x USB HS bulk max 512)
+#define RX_SLOT_SIZE        4096     // bytes per slot (matches PEAK official driver)
 #define SLCAN_ENCODE_BUF    256      // worst case: 'D' + 8-char ID + 1 DLC + 128 hex + '\r'
 #define TX_POLL_INTERVAL_NS 250000ULL  // 0.25ms
 
@@ -67,7 +67,7 @@ template <typename T>
 concept CanProtocol = requires(T& c, const T& cc,
                                IOUSBHostDevice* dev, IOService* client,
                                uint32_t bitrate, uint8_t channel, uint64_t now,
-                               const uint8_t* data, uint32_t len,
+                               const uint8_t* data, uint8_t* mutData, uint32_t len,
                                SharedRingHeader* hdr, bool txInFlight,
                                ConceptSendFn sendFn) {
     // Lifecycle
@@ -81,7 +81,7 @@ concept CanProtocol = requires(T& c, const T& cc,
     { c.drainTx(hdr, data, txInFlight, sendFn) } -> std::same_as<kern_return_t>;
 
     // RX processing: decodes USB bytes, calls onFrame for each valid CAN frame
-    { c.processRxData(data, len, [](const canfd_frame&) {}) };
+    { c.processRxData(data, len, [](const canfd_frame&) {}, hdr) };
 
     // After processRxData, check if TX drain is needed (gs_usb echo flow)
     { cc.needsDrainTx() } -> std::convertible_to<bool>;
@@ -92,5 +92,5 @@ concept CanProtocol = requires(T& c, const T& cc,
     { cc.protocolId() } -> std::convertible_to<uint8_t>;
 
     // Diagnostics: write protocol-specific stats into buffer, return bytes written
-    { cc.diagLine(data, len) } -> std::same_as<uint32_t>;
+    { cc.diagLine(mutData, len) } -> std::same_as<uint32_t>;
 };

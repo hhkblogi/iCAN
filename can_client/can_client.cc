@@ -210,6 +210,7 @@ public:
     /* Thread safety */
     std::mutex io_lock;
     std::mutex drain_lock;  // protects drainRxFrames
+    // tx_lock removed in V4: per-channel TX rings eliminate multi-producer race
     std::atomic<bool> drainer_active{false};   // only one thread does blockForData at a time
     std::atomic<uint32_t> drain_epoch{0};      // bumped after every drainRxFrames; non-drainer atomic::wait on this
 
@@ -310,21 +311,39 @@ public:
         return count;
     }
 
-    /* Write a canfd_frame to the TX ring. Returns true on success. */
-    bool writeTxFrame(const canfd_frame* frame) {
+    /* Write a canfd_frame to the per-channel TX ring. Returns true on success.
+     * V4 layout: each channel has its own SPSC TX ring (tx0 / tx1).
+     * No mutex needed — each channel's TX thread is the sole producer.
+     *
+     * IMPORTANT: Single-writer-per-channel contract. Each TX ring is SPSC.
+     * Callers MUST NOT have multiple threads writing to the same channel
+     * concurrently. The BidirTestEngine enforces this: one TX thread per
+     * channel. Violating this contract causes silent data corruption. */
+    bool writeTxFrame(const canfd_frame* frame, int channel) {
         if (!ringHeader || ringHeader->magic != SHARED_RING_MAGIC) return false;
+
+        // Select per-channel ring control and data region
+        RingCtrl* txCtrl;
+        uint8_t* txData;
+        uint32_t cap;
+        if (channel == 1 && ringHeader->channelCount >= 2 && ringHeader->tx1Capacity > 0) {
+            txCtrl = &ringHeader->tx1;
+            txData = shared_ring_tx1_data(ringHeader);
+            cap = ringHeader->tx1Capacity;
+        } else {
+            txCtrl = &ringHeader->tx0;
+            txData = shared_ring_tx0_data(ringHeader);
+            cap = ringHeader->tx0Capacity;
+        }
 
         uint16_t frameSize = static_cast<uint16_t>(sizeof(canfd_frame));
         uint32_t entrySize = 2 + frameSize;
 
-        uint32_t head = ring_load_head_relaxed(&ringHeader->tx);
-        uint32_t tail = ring_load_tail_acquire(&ringHeader->tx);
-        uint32_t cap = ringHeader->txCapacity;
+        uint32_t head = ring_load_head_relaxed(txCtrl);
+        uint32_t tail = ring_load_tail_acquire(txCtrl);
         uint32_t free = cap - (head - tail);
 
         if (entrySize > free) return false;
-
-        uint8_t* txData = shared_ring_tx_data(ringHeader);
 
         // Write entry header
         txData[head % cap] = static_cast<uint8_t>(frameSize & 0xFF);
@@ -336,7 +355,7 @@ public:
             txData[(head + 2 + i) % cap] = frameBytes[i];
         }
 
-        ring_store_head_release(&ringHeader->tx, head + entrySize);
+        ring_store_head_release(txCtrl, head + entrySize);
         return true;
     }
 
@@ -437,9 +456,9 @@ public:
 
         if (drainCallCount == 1) {
             os_log(OS_LOG_DEFAULT,
-                "CANClient: SharedRingHeader magic=0x%x layout=V%u rxCap=%u txCap=%u",
+                "CANClient: SharedRingHeader magic=0x%x layout=V%u rxCap=%u tx0Cap=%u",
                 ringHeader->magic, ringHeader->layoutVersion,
-                ringHeader->rxCapacity, ringHeader->txCapacity);
+                ringHeader->rxCapacity, ringHeader->tx0Capacity);
         }
 
         {
@@ -647,8 +666,8 @@ bool CANClient::open(int adapter_index) {
             c.ringHeader = nullptr;
         } else {
             os_log(OS_LOG_DEFAULT,
-                "CANClient: SharedRingHeader OK: rxCap=%u txCap=%u layout=V%u proto=%u",
-                c.ringHeader->rxCapacity, c.ringHeader->txCapacity,
+                "CANClient: SharedRingHeader OK: rxCap=%u tx0Cap=%u layout=V%u proto=%u",
+                c.ringHeader->rxCapacity, c.ringHeader->tx0Capacity,
                 c.ringHeader->layoutVersion, c.ringHeader->protocolId);
             c.setupAsyncNotification();
         }
@@ -825,7 +844,7 @@ int CANClient::writeClassic(const struct can_frame* frame) {
     CAN_CHANNEL(fd_frame) = static_cast<uint8_t>(_channel);
     memcpy(fd_frame.data, frame->data, copyLen);
 
-    if (!c.writeTxFrame(&fd_frame)) return 0;
+    if (!c.writeTxFrame(&fd_frame, _channel)) return 0;
     c.triggerTxDrain();
     return 1;
 }
@@ -838,7 +857,7 @@ int CANClient::write(const struct canfd_frame* frame) {
     canfd_frame tagged = *frame;
     CAN_CHANNEL(tagged) = static_cast<uint8_t>(_channel);
 
-    if (!c.writeTxFrame(&tagged)) return 0;
+    if (!c.writeTxFrame(&tagged, _channel)) return 0;
     c.triggerTxDrain();
     return 1;
 }
@@ -931,6 +950,64 @@ uint32_t CANClient::dropCount() const {
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
         return c.ringHeader->rxDropped;
     return 0;
+}
+
+uint32_t CANClient::codecEchoCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecEchoCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecOverrunCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecOverrunCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecTruncatedCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecTruncatedCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::codecZeroSentinelCount() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->codecZeroSentinelCount, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::dbgTransferSeq() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->dbgTransferSeq, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::dbgTransferLen() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->dbgTransferLen, __ATOMIC_RELAXED);
+    return 0;
+}
+
+uint32_t CANClient::dbgMsgsParsed() const {
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
+        return __atomic_load_n(&c.ringHeader->dbgMsgsParsed, __ATOMIC_RELAXED);
+    return 0;
+}
+
+void CANClient::dbgHead(uint8_t* out, uint32_t maxLen) const {
+    if (!out || maxLen == 0) return;
+    auto& c = *_impl;
+    if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC) {
+        uint32_t n = (maxLen < 48) ? maxLen : 48;
+        memcpy(out, c.ringHeader->dbgHead, n);
+    }
 }
 
 bool CANClient::isConnected() const {

@@ -39,7 +39,7 @@ inline bool writeRxFrame(SharedRingHeader* hdr, uint8_t* rxData,
     return true;
 }
 
-/// Result of reading the next TX frame from the shared ring.
+/// Result of reading the next TX frame from a TX ring.
 struct TxReadResult {
     bool valid;              // true if a frame was successfully read
     bool dropped;            // true if an invalid entry was skipped (txDropped bumped)
@@ -47,16 +47,17 @@ struct TxReadResult {
     uint32_t bytesConsumed;  // total ring bytes consumed by this read
 };
 
-/// Read the next CAN frame from the TX ring.
-/// `tail` is the current consumer position. On success, caller should advance
-/// tail by result.bytesConsumed and update the ring.
-/// If result.dropped, the caller should also advance tail (bad entry skipped).
-inline TxReadResult readTxFrame(SharedRingHeader* hdr, const uint8_t* txData,
+/// Read the next CAN frame from a TX ring.
+/// `txCtrl` is the ring control (tx0 or tx1).
+/// `txData` points to the ring's data region.
+/// `cap` is the ring's capacity in bytes.
+/// `tail` is the current consumer position.
+/// On success, caller should advance tail by result.bytesConsumed.
+inline TxReadResult readTxFrame(SharedRingHeader* hdr, RingCtrl* txCtrl,
+                                const uint8_t* txData, uint32_t cap,
                                 uint32_t tail) {
     TxReadResult result{};
-    auto* txCtrl = &hdr->tx;
     uint32_t used = ring_load_head_acquire(txCtrl) - tail;
-    uint32_t cap = SHARED_TX_CAPACITY;
 
     if (used < 2) return result;  // not enough data
 
@@ -97,6 +98,13 @@ inline TxReadResult readTxFrame(SharedRingHeader* hdr, const uint8_t* txData,
     result.valid = true;
     result.bytesConsumed = entrySize;
     return result;
+}
+
+/// Backward-compat overload: reads from the legacy single-TX-ring layout.
+/// Used by SLCAN/gs_usb codecs that still use hdr->tx0 as the only TX ring.
+inline TxReadResult readTxFrame(SharedRingHeader* hdr, const uint8_t* txData,
+                                uint32_t tail) {
+    return readTxFrame(hdr, &hdr->tx0, txData, hdr->tx0Capacity, tail);
 }
 
 } // namespace shared_ring

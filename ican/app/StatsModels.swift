@@ -29,6 +29,19 @@ struct BandwidthTestStats {
     var driverTxBusyCount: Int = 0
     var driverReadChainRestarts: Int = 0
 
+    // PCAN codec diagnostics (from SharedRingHeader via CANClient)
+    var codecEchoCount: Int = 0        // TX echoes filtered by driver
+    var codecOverrunCount: Int = 0     // firmware FIFO overflows (MSG_OVERRUN)
+    var codecTruncatedCount: Int = 0   // msgs truncated at USB transfer boundary
+    var codecZeroSentinelCount: Int = 0 // zero-size end-of-stream hits
+    var ringRxDropped: Int = 0         // frames dropped because RX ring was full
+
+    // Debug: last USB transfer snapshot
+    var dbgTransferSeq: Int = 0
+    var dbgTransferLen: Int = 0
+    var dbgMsgsParsed: Int = 0
+    var dbgHeadHex: String = ""        // hex dump of first 48 bytes
+
     // Instantaneous per-second rates (updated every ~1s from drainPerSecondCounters)
     var instantTxRate: Double = 0
     var instantRxRate: Double = 0
@@ -72,6 +85,15 @@ struct BandwidthTestStats {
         driverRxSlotsInFlight = 0
         driverTxBusyCount = 0
         driverReadChainRestarts = 0
+        codecEchoCount = 0
+        codecOverrunCount = 0
+        codecTruncatedCount = 0
+        codecZeroSentinelCount = 0
+        ringRxDropped = 0
+        dbgTransferSeq = 0
+        dbgTransferLen = 0
+        dbgMsgsParsed = 0
+        dbgHeadHex = ""
     }
 }
 
