@@ -117,6 +117,22 @@ struct BidirTestView: View {
                         .disabled(viewModel.isBidirTestRunning)
                         
                         VStack(alignment: .leading, spacing: 8) {
+                            Text("Target Rate (msg/s)")
+                            Picker("Rate", selection: $viewModel.testTargetRate) {
+                                Text("1").tag(1)
+                                Text("10").tag(10)
+                                Text("100").tag(100)
+                                Text("1K").tag(1000)
+                                Text("2K").tag(2000)
+                                Text("3K").tag(3000)
+                                Text("4K").tag(4000)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 400)
+                        }
+                        .disabled(viewModel.isBidirTestRunning)
+
+                        VStack(alignment: .leading, spacing: 8) {
                             Text("Burst Size")
                             Picker("Burst", selection: $viewModel.testBurstSize) {
                                 Text("1").tag(1)
@@ -245,7 +261,9 @@ struct BidirTestView: View {
                             Divider()
                             BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a1toA2.messagesSent)", color: .secondary)
                             BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a1toA2.messagesReceived)", color: .secondary)
-                            
+                            let cd1 = viewModel.bidirStats.a1toA2.messagesSent > 0 ? min(Double(viewModel.bidirStats.a1toA2.messagesReceived) / Double(viewModel.bidirStats.a1toA2.messagesSent) * 100, 100) : .zero
+                            BidirStatRow(label: "Cumul Delivery", value: String(format: "%.2f%%", cd1), color: cd1 > 99.9 ? .green : .orange)
+
                             if viewModel.bidirStats.a1toA2.rxSequenceGaps > 0 {
                                 BidirStatRow(label: "Seq Gaps", value: "\(viewModel.bidirStats.a1toA2.rxSequenceGaps)", color: .red)
                             }
@@ -254,7 +272,7 @@ struct BidirTestView: View {
                         .padding()
                         .background(Color.blue.opacity(0.05))
                         .cornerRadius(12)
-                        
+
                         // Right column: A2 → A1
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 6) {
@@ -266,11 +284,13 @@ struct BidirTestView: View {
                             BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantRxRate), color: .primary)
                             let dr2 = viewModel.bidirStats.a2toA1.instantTxRate > 0 ? min((viewModel.bidirStats.a2toA1.instantRxRate / viewModel.bidirStats.a2toA1.instantTxRate) * 100, 100) : .zero
                             BidirStatRow(label: "Delivery", value: String(format: "%.1f%%", dr2), color: dr2 > 99 ? .green : .orange)
-                            
+
                             Divider()
                             BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a2toA1.messagesSent)", color: .secondary)
                             BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a2toA1.messagesReceived)", color: .secondary)
-                            
+                            let cd2 = viewModel.bidirStats.a2toA1.messagesSent > 0 ? min(Double(viewModel.bidirStats.a2toA1.messagesReceived) / Double(viewModel.bidirStats.a2toA1.messagesSent) * 100, 100) : .zero
+                            BidirStatRow(label: "Cumul Delivery", value: String(format: "%.2f%%", cd2), color: cd2 > 99.9 ? .green : .orange)
+
                             if viewModel.bidirStats.a2toA1.rxSequenceGaps > 0 {
                                 BidirStatRow(label: "Seq Gaps", value: "\(viewModel.bidirStats.a2toA1.rxSequenceGaps)", color: .red)
                             }
@@ -313,6 +333,13 @@ struct BidirTestView: View {
                                 BidirStatRow(label: "RX Slots InFlight", value: "\(viewModel.bidirStats.a1toA2.driverRxSlotsInFlight)", color: viewModel.bidirStats.a1toA2.driverRxSlotsInFlight > 0 ? .green : .red)
                                 BidirStatRow(label: "TX Busy", value: "\(viewModel.bidirStats.a1toA2.driverTxBusyCount)", color: .secondary)
                                 BidirStatRow(label: "Chain Restarts", value: "\(viewModel.bidirStats.a1toA2.driverReadChainRestarts)", color: viewModel.bidirStats.a1toA2.driverReadChainRestarts > 0 ? .orange : .secondary)
+                                Divider()
+                                Text("PCAN Codec").font(.caption).foregroundColor(.secondary)
+                                BidirStatRow(label: "TX Echoes", value: "\(viewModel.bidirStats.a1toA2.codecEchoCount)", color: viewModel.bidirStats.a1toA2.codecEchoCount > 0 ? .blue : .secondary)
+                                BidirStatRow(label: "FW Overruns", value: "\(viewModel.bidirStats.a1toA2.codecOverrunCount)", color: viewModel.bidirStats.a1toA2.codecOverrunCount > 0 ? .red : .secondary)
+                                BidirStatRow(label: "Truncated", value: "\(viewModel.bidirStats.a1toA2.codecTruncatedCount)", color: viewModel.bidirStats.a1toA2.codecTruncatedCount > 0 ? .orange : .secondary)
+                                BidirStatRow(label: "Zero Sentinel", value: "\(viewModel.bidirStats.a1toA2.codecZeroSentinelCount)", color: .secondary)
+                                BidirStatRow(label: "Ring RX Drop", value: "\(viewModel.bidirStats.a1toA2.ringRxDropped)", color: viewModel.bidirStats.a1toA2.ringRxDropped > 0 ? .red : .secondary)
                             }
                             .frame(maxWidth: .infinity)
                             .padding()
@@ -341,11 +368,67 @@ struct BidirTestView: View {
                                 BidirStatRow(label: "RX Slots InFlight", value: "\(viewModel.bidirStats.a2toA1.driverRxSlotsInFlight)", color: viewModel.bidirStats.a2toA1.driverRxSlotsInFlight > 0 ? .green : .red)
                                 BidirStatRow(label: "TX Busy", value: "\(viewModel.bidirStats.a2toA1.driverTxBusyCount)", color: .secondary)
                                 BidirStatRow(label: "Chain Restarts", value: "\(viewModel.bidirStats.a2toA1.driverReadChainRestarts)", color: viewModel.bidirStats.a2toA1.driverReadChainRestarts > 0 ? .orange : .secondary)
+                                Divider()
+                                Text("PCAN Codec").font(.caption).foregroundColor(.secondary)
+                                BidirStatRow(label: "TX Echoes", value: "\(viewModel.bidirStats.a2toA1.codecEchoCount)", color: viewModel.bidirStats.a2toA1.codecEchoCount > 0 ? .blue : .secondary)
+                                BidirStatRow(label: "FW Overruns", value: "\(viewModel.bidirStats.a2toA1.codecOverrunCount)", color: viewModel.bidirStats.a2toA1.codecOverrunCount > 0 ? .red : .secondary)
+                                BidirStatRow(label: "Truncated", value: "\(viewModel.bidirStats.a2toA1.codecTruncatedCount)", color: viewModel.bidirStats.a2toA1.codecTruncatedCount > 0 ? .orange : .secondary)
+                                BidirStatRow(label: "Zero Sentinel", value: "\(viewModel.bidirStats.a2toA1.codecZeroSentinelCount)", color: .secondary)
+                                BidirStatRow(label: "Ring RX Drop", value: "\(viewModel.bidirStats.a2toA1.ringRxDropped)", color: viewModel.bidirStats.a2toA1.ringRxDropped > 0 ? .red : .secondary)
                             }
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.orange.opacity(0.05))
                             .cornerRadius(12)
+                        }
+                    }
+                    .font(.headline)
+                }
+                .padding()
+                .background(Color.platformBackground)
+                .cornerRadius(16)
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+                .padding(.horizontal)
+
+                // Raw USB Transfer Debug
+                VStack(alignment: .leading, spacing: 12) {
+                    DisclosureGroup("Raw USB Transfer (Live)") {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(.blue).frame(width: 8, height: 8)
+                                    Text("A2 RX (for A1→A2)").font(.subheadline).fontWeight(.medium)
+                                }
+                                Text("Transfer #\(viewModel.bidirStats.a1toA2.dbgTransferSeq)  len=\(viewModel.bidirStats.a1toA2.dbgTransferLen)  msgs=\(viewModel.bidirStats.a1toA2.dbgMsgsParsed)")
+                                    .font(.system(.caption, design: .monospaced))
+                                Text(viewModel.bidirStats.a1toA2.dbgHeadHex)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(Color.blue.opacity(0.05))
+                            .cornerRadius(8)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(.orange).frame(width: 8, height: 8)
+                                    Text("A1 RX (for A2→A1)").font(.subheadline).fontWeight(.medium)
+                                }
+                                Text("Transfer #\(viewModel.bidirStats.a2toA1.dbgTransferSeq)  len=\(viewModel.bidirStats.a2toA1.dbgTransferLen)  msgs=\(viewModel.bidirStats.a2toA1.dbgMsgsParsed)")
+                                    .font(.system(.caption, design: .monospaced))
+                                Text(viewModel.bidirStats.a2toA1.dbgHeadHex)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(Color.orange.opacity(0.05))
+                            .cornerRadius(8)
                         }
                     }
                     .font(.headline)

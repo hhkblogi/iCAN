@@ -1,8 +1,8 @@
 /*
- * PcanCodec.cc
+ * pcan_codec.cc
  * PCAN-USB Pro FD binary protocol implementation.
  *
- * Protocol reference: Linux kernel pcan_usb_fd.c
+ * Clean-room implementation — see protocol notice in pcan_codec.h.
  */
 
 #include "pcan_codec.h"
@@ -221,7 +221,7 @@ uint32_t Codec::encodeTxFrame(const canfd_frame& frame,
     auto* tx = reinterpret_cast<pucan_tx_msg*>(out);
     tx->size = static_cast<uint16_t>(msgSize);
     tx->type = MSG_CAN_TX;
-    tx->tag_low = 0;    // No echo tracking
+    tx->tag_low = TX_ECHO_TAG;  // Echo sentinel — firmware mirrors this back
     tx->tag_high = 0;
 
     uint8_t channel = CAN_CHANNEL(frame);
@@ -255,10 +255,22 @@ uint32_t Codec::encodeTxFrame(const canfd_frame& frame,
 // Codec: lifecycle + diagnostics
 // ================================================================
 
-uint32_t Codec::diagLine(const uint8_t* buf, uint32_t bufSize) const {
-    (void)buf;
-    (void)bufSize;
-    return 0;
+uint32_t Codec::diagLine(uint8_t* buf, uint32_t bufSize) const {
+    if (!buf || bufSize < 20) return 0;
+
+    // Pack diagnostic counters into buffer for app-side display:
+    //   [0..3]  rxEchoCount_        (TX echoes filtered)
+    //   [4..7]  rxOverrunCount_     (firmware FIFO overflows)
+    //   [8..11] rxCalibrationCount_ (timestamp sync messages)
+    //   [12..15] rxErrorCount_      (CAN bus errors)
+    //   [16..19] rxStatusCount_     (bus state changes)
+    auto* out = buf;
+    memcpy(out +  0, &rxEchoCount_,        4);
+    memcpy(out +  4, &rxOverrunCount_,      4);
+    memcpy(out +  8, &rxCalibrationCount_,  4);
+    memcpy(out + 12, &rxErrorCount_,        4);
+    memcpy(out + 16, &rxStatusCount_,       4);
+    return 20;
 }
 
 } // namespace pcan

@@ -88,6 +88,17 @@ public:
         uint64_t   completionTimestamp
     ) TYPE(IOUSBHostPipe::CompleteAsyncIO);
 
+    // Async TX completion for PCAN channel 1 (EP 0x03)
+    virtual void WriteComplete2(
+        OSAction*  action,
+        IOReturn   status,
+        uint32_t   actualByteCount,
+        uint64_t   completionTimestamp
+    ) TYPE(IOUSBHostPipe::CompleteAsyncIO);
+
+    // Internal: send raw bytes to PCAN data OUT pipe 2 (EP 0x03, channel 1)
+    virtual kern_return_t SendRawBytesChannel1(const uint8_t* data, uint32_t length) LOCALONLY;
+
     // Async command pipe completion (PCAN command pipe EP 0x01)
     virtual void CommandWriteComplete(
         OSAction*  action,

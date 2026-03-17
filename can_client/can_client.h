@@ -100,6 +100,18 @@ public:
     // Returns 0 when not connected or ring not mapped.
     uint32_t dropCount() const;
 
+    // Codec diagnostic counters from SharedRingHeader (PCAN-specific).
+    uint32_t codecEchoCount() const;
+    uint32_t codecOverrunCount() const;
+    uint32_t codecTruncatedCount() const;
+    uint32_t codecZeroSentinelCount() const;
+
+    // Debug: last USB transfer snapshot
+    uint32_t dbgTransferSeq() const;
+    uint32_t dbgTransferLen() const;
+    uint32_t dbgMsgsParsed() const;
+    void dbgHead(uint8_t* out, uint32_t maxLen) const;
+
     // --- State queries ---
 
     bool isConnected() const;
