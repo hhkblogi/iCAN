@@ -15,7 +15,6 @@ struct PortInfo: Hashable, Identifiable {
 
 @MainActor
 class CANDashboardViewModel: ObservableObject {
-    @Published var selectedBus: BusSelection = .all
     @Published var isLive: Bool = true
 
     // Core Data
@@ -196,28 +195,33 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func openCANChannels() {
-        if adapter1.isConnected {
-            adapter1.openCANChannel(bitrate: selectedBitrate)
-            if let c = adapter1.ioClient {
-                dashEngine1 = DashboardMetricsEngine()
-                dashEngine1.start(c.canClient())
-            }
-        }
-        if adapter2.isConnected {
-            adapter2.openCANChannel(bitrate: selectedBitrate)
-            if let c = adapter2.ioClient {
-                dashEngine2 = DashboardMetricsEngine()
-                dashEngine2.start(c.canClient())
-            }
+        openCANChannel(for: adapter1)
+        openCANChannel(for: adapter2)
+    }
+
+    func closeCANChannels() {
+        closeCANChannel(for: adapter1)
+        closeCANChannel(for: adapter2)
+    }
+
+    func openCANChannel(for adapter: SerialAdapter) {
+        guard adapter.isConnected && !adapter.isCANOpen else { return }
+        adapter.openCANChannel(bitrate: selectedBitrate)
+        if adapter === adapter1, let c = adapter.ioClient {
+            dashEngine1 = DashboardMetricsEngine()
+            dashEngine1.start(c.canClient())
+        } else if adapter === adapter2, let c = adapter.ioClient {
+            dashEngine2 = DashboardMetricsEngine()
+            dashEngine2.start(c.canClient())
         }
         updateBusStatuses()
     }
 
-    func closeCANChannels() {
-        dashEngine1.stop()
-        dashEngine2.stop()
-        adapter1.closeCANChannel()
-        adapter2.closeCANChannel()
+    func closeCANChannel(for adapter: SerialAdapter) {
+        guard adapter.isCANOpen else { return }
+        if adapter === adapter1 { dashEngine1.stop() }
+        else if adapter === adapter2 { dashEngine2.stop() }
+        adapter.closeCANChannel()
         updateBusStatuses()
     }
     

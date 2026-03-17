@@ -1,78 +1,54 @@
 import SwiftUI
 
-struct ConnectionSheet: View {
+struct PortsView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // Adapter 1 Section
-                Section("Adapter 1 (TX/RX)") {
-                    AdapterConnectionSection(
-                        adapter: viewModel.adapter1,
-                        availablePorts: viewModel.availablePorts,
-                        onRefresh: { viewModel.refreshPorts() },
-                        onConnect: { viewModel.connectAdapter(viewModel.adapter1) }
-                    )
-                }
-
-                // Adapter 2 Section
-                Section("Adapter 2 (RX/TX)") {
-                    AdapterConnectionSection(
-                        adapter: viewModel.adapter2,
-                        availablePorts: viewModel.availablePorts,
-                        onRefresh: { viewModel.refreshPorts() },
-                        onConnect: { viewModel.connectAdapter(viewModel.adapter2) }
-                    )
-                }
-
-                // CAN Settings
-                Section("CAN Settings") {
-                    Picker("Bitrate", selection: $viewModel.selectedBitrate) {
-                        ForEach(CANBitrate.allCases) { bitrate in
-                            Text(bitrate.description).tag(bitrate)
-                        }
-                    }
-                    
-                    Toggle("CAN FD Enabled", isOn: $viewModel.canFDEnabled)
-                    
-                    if viewModel.canFDEnabled {
-                        Text("Note: DSD TECH adapters support up to 5M data phase bitrate.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Button {
-                            viewModel.openCANChannels()
-                        } label: {
-                            Label("Open CAN Channels", systemImage: "play.fill")
-                        }
-                        .disabled(!viewModel.adapter1.isConnected && !viewModel.adapter2.isConnected || viewModel.isCANOpen)
-                        .buttonStyle(.borderedProminent)
-                        
-                        if viewModel.isCANOpen {
-                            Button {
-                                viewModel.closeCANChannels()
-                            } label: {
-                                Label("Close CAN Channels", systemImage: "power")
-                            }
-                            .foregroundColor(.orange)
-                        }
+        Form {
+            // CAN Settings
+            Section("CAN Settings") {
+                Picker("Bitrate", selection: $viewModel.selectedBitrate) {
+                    ForEach(CANBitrate.allCases) { bitrate in
+                        Text(bitrate.description).tag(bitrate)
                     }
                 }
 
-                // Diagnostic Section
-                Section("Driver Diagnostics") {
-                    DiagnosticView()
+                Toggle("CAN FD Enabled", isOn: $viewModel.canFDEnabled)
+
+                if viewModel.canFDEnabled {
+                    Text("Note: DSD TECH adapters support up to 5M data phase bitrate.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
-            .navigationTitle("Connections & Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
+
+            // Adapter 1 Section
+            Section("Adapter 1") {
+                AdapterConnectionSection(
+                    adapter: viewModel.adapter1,
+                    availablePorts: viewModel.availablePorts,
+                    onRefresh: { viewModel.refreshPorts() },
+                    onConnect: { viewModel.connectAdapter(viewModel.adapter1) },
+                    onOpenCAN: { viewModel.openCANChannel(for: viewModel.adapter1) },
+                    onCloseCAN: { viewModel.closeCANChannel(for: viewModel.adapter1) }
+                )
+            }
+
+            // Adapter 2 Section
+            Section("Adapter 2") {
+                AdapterConnectionSection(
+                    adapter: viewModel.adapter2,
+                    availablePorts: viewModel.availablePorts,
+                    onRefresh: { viewModel.refreshPorts() },
+                    onConnect: { viewModel.connectAdapter(viewModel.adapter2) },
+                    onOpenCAN: { viewModel.openCANChannel(for: viewModel.adapter2) },
+                    onCloseCAN: { viewModel.closeCANChannel(for: viewModel.adapter2) }
+                )
+            }
+
+            // Diagnostic Section
+            Section("Driver Diagnostics") {
+                DiagnosticView()
             }
         }
     }
@@ -84,9 +60,10 @@ struct AdapterConnectionSection: View {
     let availablePorts: [PortInfo]
     let onRefresh: () -> Void
     let onConnect: () -> Void
+    let onOpenCAN: () -> Void
+    let onCloseCAN: () -> Void
 
     var body: some View {
-        // Each element is a separate Form row so taps don't get swallowed by Picker
         Picker("Port", selection: $adapter.selectedPort) {
             Text("Select Port").tag("")
             ForEach(availablePorts) { port in
@@ -134,13 +111,34 @@ struct AdapterConnectionSection: View {
             }
         }
 
-        if adapter.isCANOpen {
+        if adapter.isConnected {
             HStack {
-                Image(systemName: "bolt.car.fill")
-                    .foregroundColor(.green)
-                Text("CAN Channel Open")
-                    .font(.caption)
-                    .foregroundColor(.green)
+                if adapter.isCANOpen {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 8, height: 8)
+                        Text("CAN Open")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        onCloseCAN()
+                    } label: {
+                        Label("Close", systemImage: "stop.fill")
+                    }
+                    .foregroundColor(.orange)
+                } else {
+                    Button {
+                        onOpenCAN()
+                    } label: {
+                        Label("Open CAN", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         }
 

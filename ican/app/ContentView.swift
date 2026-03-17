@@ -3,20 +3,19 @@ import Combine
 
 struct ContentView: View {
     @StateObject private var viewModel = CANDashboardViewModel()
-    @State private var selectedTab: DashboardTab = .dashboard
-    @State private var showConnectionSheet = false
-    
+    @State private var selectedTab: DashboardTab = .ports
+
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(
-                selectedBus: $viewModel.selectedBus,
                 selectedTab: $selectedTab,
-                viewModel: viewModel,
-                showConnectionSheet: $showConnectionSheet
+                viewModel: viewModel
             )
-            
+
             ZStack {
                 switch selectedTab {
+                case .ports:
+                    PortsView(viewModel: viewModel)
                 case .dashboard:
                     DashboardView(viewModel: viewModel)
                 case .messages:
@@ -31,9 +30,6 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.platformGroupedBackground)
-        }
-        .sheet(isPresented: $showConnectionSheet) {
-            ConnectionSheet(viewModel: viewModel)
         }
     }
 }
