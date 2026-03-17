@@ -322,8 +322,8 @@ public:
     }
 
     // RX processing: parse PCAN TLV stream from EP 0x82, emit CAN frames.
-    // Handles fragmentation across USB transfers (matching PEAK driver's
-    // frag_rec/frag_size approach), zero-padded gaps, and all message types.
+    // No cross-transfer reassembly — firmware pads USB packets with stale
+    // data, so fragmentation is handled by break-on-zero + break-on-truncation.
     template <typename FrameFn>
     void processRxData(const uint8_t* data, uint32_t len, FrameFn&& onFrame,
                        SharedRingHeader* ringHdr = nullptr) {
@@ -341,7 +341,6 @@ public:
         while (ptr + sizeof(pucan_msg) <= end) {
             const auto* msg = reinterpret_cast<const pucan_msg*>(ptr);
             uint16_t msgSize = msg->size;
-            uint16_t msgType = msg->type;
 
             if (msgSize == 0) {
                 rxZeroSentinelCount_++;
@@ -357,12 +356,13 @@ public:
             msgIdx++;
         }
 
-        // Publish debug snapshot and counters to shared memory
+        // Publish debug snapshot and counters to shared memory.
+        // Use atomic stores — userspace reads these concurrently.
         if (ringHdr) {
-            ringHdr->dbgTransferSeq = rxTransferCount_;
-            ringHdr->dbgTransferLen = len;
-            ringHdr->dbgMsgsParsed = msgIdx;
-            ringHdr->dbgZerosHit = rxZeroSentinelCount_;
+            __atomic_store_n(&ringHdr->dbgTransferSeq, rxTransferCount_, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->dbgTransferLen, len, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->dbgMsgsParsed, msgIdx, __ATOMIC_RELAXED);
+            __atomic_store_n(&ringHdr->dbgZerosHit, rxZeroSentinelCount_, __ATOMIC_RELAXED);
             uint32_t copyLen = (len < 48) ? len : 48;
             memcpy(ringHdr->dbgHead, data, copyLen);
             __atomic_store_n(&ringHdr->codecEchoCount, rxEchoCount_, __ATOMIC_RELAXED);
@@ -421,7 +421,7 @@ public:
 
     // --- Diagnostics ---
 
-    uint32_t diagLine(const uint8_t* buf, uint32_t bufSize) const;
+    uint32_t diagLine(uint8_t* buf, uint32_t bufSize) const;
 
     // --- Accessors ---
 

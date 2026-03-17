@@ -313,7 +313,12 @@ public:
 
     /* Write a canfd_frame to the per-channel TX ring. Returns true on success.
      * V4 layout: each channel has its own SPSC TX ring (tx0 / tx1).
-     * No mutex needed — each channel's TX thread is the sole producer. */
+     * No mutex needed — each channel's TX thread is the sole producer.
+     *
+     * IMPORTANT: Single-writer-per-channel contract. Each TX ring is SPSC.
+     * Callers MUST NOT have multiple threads writing to the same channel
+     * concurrently. The BidirTestEngine enforces this: one TX thread per
+     * channel. Violating this contract causes silent data corruption. */
     bool writeTxFrame(const canfd_frame* frame, int channel) {
         if (!ringHeader || ringHeader->magic != SHARED_RING_MAGIC) return false;
 
@@ -978,21 +983,21 @@ uint32_t CANClient::codecZeroSentinelCount() const {
 uint32_t CANClient::dbgTransferSeq() const {
     auto& c = *_impl;
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
-        return c.ringHeader->dbgTransferSeq;
+        return __atomic_load_n(&c.ringHeader->dbgTransferSeq, __ATOMIC_RELAXED);
     return 0;
 }
 
 uint32_t CANClient::dbgTransferLen() const {
     auto& c = *_impl;
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
-        return c.ringHeader->dbgTransferLen;
+        return __atomic_load_n(&c.ringHeader->dbgTransferLen, __ATOMIC_RELAXED);
     return 0;
 }
 
 uint32_t CANClient::dbgMsgsParsed() const {
     auto& c = *_impl;
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
-        return c.ringHeader->dbgMsgsParsed;
+        return __atomic_load_n(&c.ringHeader->dbgMsgsParsed, __ATOMIC_RELAXED);
     return 0;
 }
 

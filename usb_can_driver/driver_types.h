@@ -67,7 +67,7 @@ template <typename T>
 concept CanProtocol = requires(T& c, const T& cc,
                                IOUSBHostDevice* dev, IOService* client,
                                uint32_t bitrate, uint8_t channel, uint64_t now,
-                               const uint8_t* data, uint32_t len,
+                               const uint8_t* data, uint8_t* mutData, uint32_t len,
                                SharedRingHeader* hdr, bool txInFlight,
                                ConceptSendFn sendFn) {
     // Lifecycle
@@ -92,5 +92,5 @@ concept CanProtocol = requires(T& c, const T& cc,
     { cc.protocolId() } -> std::convertible_to<uint8_t>;
 
     // Diagnostics: write protocol-specific stats into buffer, return bytes written
-    { cc.diagLine(data, len) } -> std::same_as<uint32_t>;
+    { cc.diagLine(mutData, len) } -> std::same_as<uint32_t>;
 };

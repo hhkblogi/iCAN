@@ -255,7 +255,7 @@ uint32_t Codec::encodeTxFrame(const canfd_frame& frame,
 // Codec: lifecycle + diagnostics
 // ================================================================
 
-uint32_t Codec::diagLine(const uint8_t* buf, uint32_t bufSize) const {
+uint32_t Codec::diagLine(uint8_t* buf, uint32_t bufSize) const {
     if (!buf || bufSize < 20) return 0;
 
     // Pack diagnostic counters into buffer for app-side display:
@@ -264,7 +264,7 @@ uint32_t Codec::diagLine(const uint8_t* buf, uint32_t bufSize) const {
     //   [8..11] rxCalibrationCount_ (timestamp sync messages)
     //   [12..15] rxErrorCount_      (CAN bus errors)
     //   [16..19] rxStatusCount_     (bus state changes)
-    auto* out = const_cast<uint8_t*>(buf);
+    auto* out = buf;
     memcpy(out +  0, &rxEchoCount_,        4);
     memcpy(out +  4, &rxOverrunCount_,      4);
     memcpy(out +  8, &rxCalibrationCount_,  4);

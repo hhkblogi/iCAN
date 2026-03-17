@@ -180,9 +180,9 @@ public:
 
             // Send first, advance tail only on success (prevents silent
             // frame loss when concurrent DrainTxRing calls race on fTxInFlight).
-            onTxSent();
             kern_return_t txRet = sendFn(txFrame, gsFrameSize);
             if (txRet == kIOReturnSuccess) {
+                onTxSent();
                 ring_store_tail_release(txCtrl, tail);
                 __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
             }
