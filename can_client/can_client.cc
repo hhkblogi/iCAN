@@ -456,7 +456,7 @@ public:
 
         if (drainCallCount == 1) {
             os_log(OS_LOG_DEFAULT,
-                "CANClient: SharedRingHeader magic=0x%x layout=V%u rxCap=%u txCap=%u",
+                "CANClient: SharedRingHeader magic=0x%x layout=V%u rxCap=%u tx0Cap=%u",
                 ringHeader->magic, ringHeader->layoutVersion,
                 ringHeader->rxCapacity, ringHeader->tx0Capacity);
         }
@@ -666,7 +666,7 @@ bool CANClient::open(int adapter_index) {
             c.ringHeader = nullptr;
         } else {
             os_log(OS_LOG_DEFAULT,
-                "CANClient: SharedRingHeader OK: rxCap=%u txCap=%u layout=V%u proto=%u",
+                "CANClient: SharedRingHeader OK: rxCap=%u tx0Cap=%u layout=V%u proto=%u",
                 c.ringHeader->rxCapacity, c.ringHeader->tx0Capacity,
                 c.ringHeader->layoutVersion, c.ringHeader->protocolId);
             c.setupAsyncNotification();
@@ -1002,6 +1002,7 @@ uint32_t CANClient::dbgMsgsParsed() const {
 }
 
 void CANClient::dbgHead(uint8_t* out, uint32_t maxLen) const {
+    if (!out || maxLen == 0) return;
     auto& c = *_impl;
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC) {
         uint32_t n = (maxLen < 48) ? maxLen : 48;

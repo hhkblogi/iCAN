@@ -357,7 +357,8 @@ public:
         }
 
         // Publish debug snapshot and counters to shared memory.
-        // Use atomic stores — userspace reads these concurrently.
+        // Scalar fields use atomic stores. dbgHead uses memcpy (best-effort
+        // debug data — readers may see partial updates, which is acceptable).
         if (ringHdr) {
             __atomic_store_n(&ringHdr->dbgTransferSeq, rxTransferCount_, __ATOMIC_RELAXED);
             __atomic_store_n(&ringHdr->dbgTransferLen, len, __ATOMIC_RELAXED);
@@ -449,7 +450,8 @@ private:
             }
         } else if (msgType == MSG_OVERRUN) {
             rxOverrunCount_++;
-            DEXT_LOG("pcan: firmware OVERRUN #%u (internal FIFO overflow)", rxOverrunCount_);
+            if (rxOverrunCount_ <= 5 || (rxOverrunCount_ % 100) == 0)
+                DEXT_LOG("pcan: firmware OVERRUN #%u (internal FIFO overflow)", rxOverrunCount_);
         } else if (msgType == MSG_CALIBRATION) {
             rxCalibrationCount_++;
         } else if (msgType == MSG_ERROR) {

@@ -74,7 +74,7 @@ struct SharedRingHeader {
     /* Live debug snapshot of last USB transfer (driver writes, app reads) */
     uint32_t dbgTransferSeq;        /* offset 64: transfer sequence number */
     uint32_t dbgTransferLen;        /* offset 68: USB actualByteCount */
-    uint32_t dbgMsgsParsed;         /* offset 72: CAN frames parsed */
+    uint32_t dbgMsgsParsed;         /* offset 72: total messages parsed (CAN + calibration + status) */
     uint32_t dbgZerosHit;           /* offset 76: zero sentinels in this transfer */
     uint8_t  dbgHead[48];           /* offset 80: first 48 bytes of raw transfer */
                                     /* total: 80+48 = 128 bytes, pad0 fully used */
