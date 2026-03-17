@@ -206,7 +206,7 @@ class CANDashboardViewModel: ObservableObject {
 
     func openCANChannel(for adapter: SerialAdapter) {
         guard adapter.isConnected && !adapter.isCANOpen else { return }
-        adapter.openCANChannel(bitrate: selectedBitrate)
+        adapter.openCANChannel(bitrate: adapter.selectedBitrate)
         if adapter === adapter1, let c = adapter.ioClient {
             dashEngine1 = DashboardMetricsEngine()
             dashEngine1.start(c.canClient())
@@ -253,12 +253,13 @@ class CANDashboardViewModel: ObservableObject {
             metrics.throughput = totalByteRate / 1024.0
 
             let bitsPerFrame = 130.0
-            let busCapacity = max(Double(selectedBitrate.rawValue), 1.0)
+            let bus0Capacity = max(Double(adapter1.selectedBitrate.rawValue), 1.0)
+            let bus1Capacity = max(Double(adapter2.selectedBitrate.rawValue), 1.0)
             let rate1MsgSec = Double(rate1.messages) / elapsed
             let rate2MsgSec = Double(rate2.messages) / elapsed
-            let bus0Load = min(rate1MsgSec * bitsPerFrame / busCapacity * 100, 100)
-            let bus1Load = min(rate2MsgSec * bitsPerFrame / busCapacity * 100, 100)
-            metrics.busLoad = min(totalMsgRate * bitsPerFrame / busCapacity * 100, 100)
+            let bus0Load = min(rate1MsgSec * bitsPerFrame / bus0Capacity * 100, 100)
+            let bus1Load = min(rate2MsgSec * bitsPerFrame / bus1Capacity * 100, 100)
+            metrics.busLoad = max(bus0Load, bus1Load)
 
             busStatuses[0].messageRate = rate1MsgSec
             busStatuses[1].messageRate = rate2MsgSec

@@ -14,6 +14,8 @@ class SerialAdapter: ObservableObject {
     @Published var isCANOpen: Bool = false
     @Published var isConnecting: Bool = false
     @Published var lastError: String?
+    @Published var selectedBitrate: CANBitrate = .kbps1000
+    @Published var canFDEnabled: Bool = false
 
     private var client: CANConnection?
     private var isSharedConnection = false

@@ -5,23 +5,6 @@ struct PortsView: View {
 
     var body: some View {
         Form {
-            // CAN Settings
-            Section("CAN Settings") {
-                Picker("Bitrate", selection: $viewModel.selectedBitrate) {
-                    ForEach(CANBitrate.allCases) { bitrate in
-                        Text(bitrate.description).tag(bitrate)
-                    }
-                }
-
-                Toggle("CAN FD Enabled", isOn: $viewModel.canFDEnabled)
-
-                if viewModel.canFDEnabled {
-                    Text("Note: DSD TECH adapters support up to 5M data phase bitrate.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
             // Adapter 1 Section
             Section("Adapter 1") {
                 AdapterConnectionSection(
@@ -112,6 +95,17 @@ struct AdapterConnectionSection: View {
         }
 
         if adapter.isConnected {
+            // Per-adapter CAN settings
+            Picker("Bitrate", selection: $adapter.selectedBitrate) {
+                ForEach(CANBitrate.allCases) { bitrate in
+                    Text(bitrate.description).tag(bitrate)
+                }
+            }
+            .disabled(adapter.isCANOpen)
+
+            Toggle("CAN FD", isOn: $adapter.canFDEnabled)
+                .disabled(adapter.isCANOpen)
+
             HStack {
                 if adapter.isCANOpen {
                     HStack(spacing: 6) {
