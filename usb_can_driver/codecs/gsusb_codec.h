@@ -154,7 +154,7 @@ public:
         if (txInFlight) return kIOReturnBusy;
         if (!canSend()) return kIOReturnBusy;
 
-        auto* txCtrl = &hdr->tx;
+        auto* txCtrl = &hdr->tx0;
         uint32_t tail = ring_load_tail_relaxed(txCtrl);
 
         // gs_usb firmware expects exactly ONE gs_host_frame per USB bulk OUT transfer

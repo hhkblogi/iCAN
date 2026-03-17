@@ -52,10 +52,6 @@ class CANDashboardViewModel: ObservableObject {
     @Published var bidirStats = BidirTestStats()
     @Published var bidirHistory: [BidirHistoryPoint] = []
     @Published var pcanDebugLog: String = ""
-    private var lastDbgSeqA1: Int = 0
-    private var lastDbgSeqA2: Int = 0
-    private var lastSeqGapsA1: Int = 0
-    private var lastSeqGapsA2: Int = 0
 
     // Distributed Bidirectional Test Properties
     @Published var isDistBidirTestRunning = false
@@ -531,45 +527,6 @@ class CANDashboardViewModel: ObservableObject {
                     a1.canClient().dbgHead(&buf, 48)
                     let len = min(Int(a1.canClient().dbgTransferLen()), 48)
                     self.bidirStats.a2toA1.dbgHeadHex = buf.prefix(len).map { String(format: "%02X", $0) }.joined(separator: " ")
-                }
-
-                // Debug print to Xcode console — every new transfer, flag seq gaps
-                let curSeqA1 = self.bidirStats.a1toA2.dbgTransferSeq
-                let curSeqA2 = self.bidirStats.a2toA1.dbgTransferSeq
-                let curGapsA1 = self.bidirStats.a1toA2.rxSequenceGaps
-                let curGapsA2 = self.bidirStats.a2toA1.rxSequenceGaps
-
-                if curSeqA1 != self.lastDbgSeqA1 {
-                    let hasGap = curGapsA1 > self.lastSeqGapsA1
-                    let gap = hasGap ? " *** GAP +\(curGapsA1 - self.lastSeqGapsA1) ***" : ""
-                    print("A1→A2 #\(curSeqA1) len=\(self.bidirStats.a1toA2.dbgTransferLen) msgs=\(self.bidirStats.a1toA2.dbgMsgsParsed) z=\(self.bidirStats.a1toA2.codecZeroSentinelCount) t=\(self.bidirStats.a1toA2.codecTruncatedCount)\(gap)")
-                    print("  \(self.bidirStats.a1toA2.dbgHeadHex)")
-                    if hasGap {
-                        // On GAP: dump full pipeline state
-                        let s = self.bidirStats.a1toA2
-                        print("  === A1→A2 GAP CONTEXT ===")
-                        print("  sent=\(s.messagesSent) recv=\(s.messagesReceived) gaps=\(s.rxSequenceGaps) ooo=\(s.rxOutOfOrder) dup=\(s.rxDuplicates)")
-                        print("  ringDrop=\(s.ringRxDropped) echo=\(s.codecEchoCount) overrun=\(s.codecOverrunCount)")
-                        print("  calibration=\(Int(a2.canClient().codecZeroSentinelCount()) - s.codecZeroSentinelCount) (delta)")
-                        print("  =========================")
-                    }
-                    self.lastDbgSeqA1 = curSeqA1
-                    self.lastSeqGapsA1 = curGapsA1
-                }
-                if curSeqA2 != self.lastDbgSeqA2 {
-                    let hasGap = curGapsA2 > self.lastSeqGapsA2
-                    let gap = hasGap ? " *** GAP +\(curGapsA2 - self.lastSeqGapsA2) ***" : ""
-                    print("A2→A1 #\(curSeqA2) len=\(self.bidirStats.a2toA1.dbgTransferLen) msgs=\(self.bidirStats.a2toA1.dbgMsgsParsed) z=\(self.bidirStats.a2toA1.codecZeroSentinelCount) t=\(self.bidirStats.a2toA1.codecTruncatedCount)\(gap)")
-                    print("  \(self.bidirStats.a2toA1.dbgHeadHex)")
-                    if hasGap {
-                        let s = self.bidirStats.a2toA1
-                        print("  === A2→A1 GAP CONTEXT ===")
-                        print("  sent=\(s.messagesSent) recv=\(s.messagesReceived) gaps=\(s.rxSequenceGaps) ooo=\(s.rxOutOfOrder) dup=\(s.rxDuplicates)")
-                        print("  ringDrop=\(s.ringRxDropped) echo=\(s.codecEchoCount) overrun=\(s.codecOverrunCount)")
-                        print("  =========================")
-                    }
-                    self.lastDbgSeqA2 = curSeqA2
-                    self.lastSeqGapsA2 = curGapsA2
                 }
 
                 let now = Date()

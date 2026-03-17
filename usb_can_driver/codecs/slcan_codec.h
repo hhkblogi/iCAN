@@ -120,7 +120,7 @@ public:
         if (!hdr || !txData) return kIOReturnNotReady;
         if (txInFlight) return kIOReturnBusy;
 
-        auto* txCtrl = &hdr->tx;
+        auto* txCtrl = &hdr->tx0;
         uint32_t tail = ring_load_tail_relaxed(txCtrl);
 
         char slcanBatch[TX_BUFFER_SIZE];

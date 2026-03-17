@@ -312,9 +312,12 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
     // Flush stale frames from previous test runs.
     // Without this, the first frames received have old sequence numbers
     // from the prior test, causing spurious gap/ooo counts in MetricsEngine.
+    // Two passes with a brief settle to catch in-flight USB transfers.
     {
         canfd_frame buf[256];
-        // read() triggers ensureReader() on first call, then drains stale data
+        while (_impl->a1Client.readMany(buf, 256) > 0) {}
+        while (_impl->a2Client.readMany(buf, 256) > 0) {}
+        usleep(20000);  // 20ms: let USB pipeline drain
         while (_impl->a1Client.readMany(buf, 256) > 0) {}
         while (_impl->a2Client.readMany(buf, 256) > 0) {}
     }

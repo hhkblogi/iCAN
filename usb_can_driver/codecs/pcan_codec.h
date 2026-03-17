@@ -275,14 +275,15 @@ public:
 
     void onTimer(uint64_t now) {}
 
-    // TX drain: read one frame from ring, encode to PCAN binary, send
+    // TX drain: read one frame from tx0 ring, encode to PCAN binary, send.
+    // CanProtocol concept compliance — single-endpoint fallback path.
     template <typename SendFn>
     kern_return_t drainTx(SharedRingHeader* hdr, const uint8_t* txData,
                           bool txInFlight, SendFn&& sendFn) {
         if (!hdr || !txData) return kIOReturnNotReady;
         if (txInFlight) return kIOReturnBusy;
 
-        auto* txCtrl = &hdr->tx;
+        auto* txCtrl = &hdr->tx0;
         uint32_t tail = ring_load_tail_relaxed(txCtrl);
 
         // One frame per USB transfer (PCAN firmware requirement)
@@ -372,6 +373,42 @@ public:
             __atomic_store_n(&ringHdr->codecTruncatedCount, rxTruncatedCount_, __ATOMIC_RELAXED);
             __atomic_store_n(&ringHdr->codecZeroSentinelCount, rxZeroSentinelCount_, __ATOMIC_RELAXED);
         }
+    }
+
+    // Per-ring TX drain: reads one frame from a specific TX ring, encodes, sends.
+    // Used by the driver to drain tx0 and tx1 independently to their endpoints.
+    template <typename SendFn>
+    kern_return_t drainTxRing(SharedRingHeader* hdr, RingCtrl* txCtrl,
+                              const uint8_t* txData, uint32_t txCap,
+                              bool txInFlight, SendFn&& sendFn) {
+        if (!hdr || !txData || !txCtrl) return kIOReturnNotReady;
+        if (txInFlight) return kIOReturnBusy;
+
+        uint32_t tail = ring_load_tail_relaxed(txCtrl);
+
+        auto txRead = shared_ring::readTxFrame(hdr, txCtrl, txData, txCap, tail);
+        if (!txRead.valid && !txRead.dropped) return kIOReturnSuccess;
+
+        tail += txRead.bytesConsumed;
+        if (txRead.dropped) {
+            ring_store_tail_release(txCtrl, tail);
+            return kIOReturnSuccess;
+        }
+
+        uint8_t txBuf[128];
+        uint32_t txSize = encodeTxFrame(txRead.frame, txBuf, sizeof(txBuf));
+        if (txSize == 0) {
+            __atomic_fetch_add(&hdr->txDropped, 1, __ATOMIC_RELAXED);
+            ring_store_tail_release(txCtrl, tail);
+            return kIOReturnSuccess;
+        }
+
+        kern_return_t txRet = sendFn(txBuf, txSize);
+        if (txRet == kIOReturnSuccess) {
+            ring_store_tail_release(txCtrl, tail);
+            __atomic_fetch_add(&hdr->txDrainCount, 1, __ATOMIC_RELAXED);
+        }
+        return txRet;
     }
 
     bool needsDrainTx() const { return false; }

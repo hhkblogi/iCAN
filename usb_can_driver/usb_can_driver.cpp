@@ -72,10 +72,15 @@ struct USBCANDriver_IVars {
     RxSlotState               fRxSlotState[RX_RING_SIZE];
     uint32_t                  fRxSlotsInFlight;
 
-    // TX: single buffer for AsyncIO
+    // TX channel 0: buffer for AsyncIO on fBulkOutPipe (EP 0x02)
     IOBufferMemoryDescriptor* fTxBuffer;
     OSAction*                 fWriteAction;        // bound to fTxQueue
     std::atomic<bool>         fTxInFlight{false};
+
+    // TX channel 1 (PCAN EP 0x03): separate buffer + action + in-flight flag
+    IOBufferMemoryDescriptor* fTxBuffer2;
+    OSAction*                 fWriteAction2;       // bound to fTxQueue
+    std::atomic<bool>         fTxInFlight2{false};
 
     // Command pipe (PCAN EP 0x01): separate buffer + in-flight flag
     IOBufferMemoryDescriptor* fCmdBuffer;
@@ -205,11 +210,13 @@ kern_return_t USBCANDriver::Start_Impl(IOService* provider)
     ivars->fRingHeader->magic = SHARED_RING_MAGIC;
     ivars->fRingHeader->layoutVersion = SHARED_RING_LAYOUT_VERSION;
     ivars->fRingHeader->rxCapacity = SHARED_RX_CAPACITY;
-    ivars->fRingHeader->txCapacity = SHARED_TX_CAPACITY;
+    ivars->fRingHeader->tx0Capacity = SHARED_TX0_CAPACITY;
+    ivars->fRingHeader->tx1Capacity = SHARED_TX1_CAPACITY;
     ivars->fRingHeader->protocolId = kCANProtocolSLCAN;  // updated in ConfigureDevice
     ivars->fRingHeader->channelCount = 1;
-    DEXT_LOG("Start: frame ring created, rxCap=%u txCap=%u layout=V%u",
-             SHARED_RX_CAPACITY, SHARED_TX_CAPACITY, SHARED_RING_LAYOUT_VERSION);
+    DEXT_LOG("Start: frame ring V%u created, rxCap=%u tx0Cap=%u tx1Cap=%u",
+             SHARED_RING_LAYOUT_VERSION, SHARED_RX_CAPACITY,
+             SHARED_TX0_CAPACITY, SHARED_TX1_CAPACITY);
 
     RegisterService();
 
@@ -296,6 +303,10 @@ kern_return_t USBCANDriver::Stop_Impl(IOService* provider)
         ivars->fTxBuffer->release();
         ivars->fTxBuffer = nullptr;
     }
+    if (ivars->fTxBuffer2) {
+        ivars->fTxBuffer2->release();
+        ivars->fTxBuffer2 = nullptr;
+    }
 
     if (ivars->fTxQueue) {
         ivars->fTxQueue->release();
@@ -335,6 +346,14 @@ void USBCANDriver::free()
         if (ivars->fWriteAction) {
             ivars->fWriteAction->release();
             ivars->fWriteAction = nullptr;
+        }
+        if (ivars->fWriteAction2) {
+            ivars->fWriteAction2->release();
+            ivars->fWriteAction2 = nullptr;
+        }
+        if (ivars->fTxBuffer2) {
+            ivars->fTxBuffer2->release();
+            ivars->fTxBuffer2 = nullptr;
         }
         if (ivars->fCmdWriteAction) {
             ivars->fCmdWriteAction->release();
@@ -775,12 +794,31 @@ kern_return_t USBCANDriver::StartIO()
     }
     ivars->fTxInFlight.store(false);
 
+    // Create async TX completion for PCAN channel 1 (EP 0x03)
+    if (ivars->fDataOutPipe2 && !ivars->fWriteAction2) {
+        kern_return_t ret2 = IOBufferMemoryDescriptor::Create(
+            kIOMemoryDirectionInOut, TX_BUFFER_SIZE, 0, &ivars->fTxBuffer2);
+        if (ret2 == kIOReturnSuccess) {
+            ret2 = CreateActionWriteComplete2(0, &ivars->fWriteAction2);
+        }
+        if (ret2 != kIOReturnSuccess) {
+            DEXT_LOG("StartIO: ch1 TX setup failed: 0x%x (single-endpoint fallback)", ret2);
+            if (ivars->fTxBuffer2) { ivars->fTxBuffer2->release(); ivars->fTxBuffer2 = nullptr; }
+            ivars->fWriteAction2 = nullptr;
+        } else {
+            DEXT_LOG("StartIO: PCAN dual-endpoint TX enabled (EP 0x02 + 0x03)");
+        }
+    }
+    ivars->fTxInFlight2.store(false);
+
     // Reset frame ring for fresh I/O session
     if (ivars->fRingHeader) {
         ring_store_head_release(&ivars->fRingHeader->rx, 0);
         ring_store_tail_release(&ivars->fRingHeader->rx, 0);
-        ring_store_head_release(&ivars->fRingHeader->tx, 0);
-        ring_store_tail_release(&ivars->fRingHeader->tx, 0);
+        ring_store_head_release(&ivars->fRingHeader->tx0, 0);
+        ring_store_tail_release(&ivars->fRingHeader->tx0, 0);
+        ring_store_head_release(&ivars->fRingHeader->tx1, 0);
+        ring_store_tail_release(&ivars->fRingHeader->tx1, 0);
         ivars->fRingHeader->rxProduceCount = 0;
         ivars->fRingHeader->rxDropped = 0;
         ivars->fRingHeader->txDrainCount = 0;
@@ -815,6 +853,9 @@ kern_return_t USBCANDriver::StopIO()
 
     if (ivars->fBulkOutPipe) {
         ivars->fBulkOutPipe->Abort(0, kIOReturnAborted, this);
+    }
+    if (ivars->fDataOutPipe2) {
+        ivars->fDataOutPipe2->Abort(0, kIOReturnAborted, this);
     }
 
     return kIOReturnSuccess;
@@ -1123,6 +1164,54 @@ kern_return_t USBCANDriver::SendRawBytes(const uint8_t* data, uint32_t length)
     return ret;
 }
 
+kern_return_t USBCANDriver::SendRawBytesChannel1(const uint8_t* data, uint32_t length)
+{
+    if (!ivars->fIsConfigured || !ivars->fDataOutPipe2 || !ivars->fTxBuffer2)
+        return kIOReturnNotReady;
+    if (length == 0) return kIOReturnSuccess;
+    if (length > TX_BUFFER_SIZE) return kIOReturnNoSpace;
+
+    bool expected = false;
+    if (!ivars->fTxInFlight2.compare_exchange_strong(expected, true,
+            std::memory_order_acq_rel)) {
+        return kIOReturnBusy;
+    }
+
+    uint64_t txAddr = 0, txLen = 0;
+    ivars->fTxBuffer2->Map(0, 0, 0, 0, &txAddr, &txLen);
+    memcpy((void*)txAddr, data, length);
+
+    kern_return_t ret = ivars->fDataOutPipe2->AsyncIO(
+        ivars->fTxBuffer2, length, ivars->fWriteAction2, 0);
+
+    if (ret != kIOReturnSuccess) {
+        ivars->fTxInFlight2.store(false, std::memory_order_release);
+        DEXT_LOG("AsyncIO Write ch1 failed: 0x%x", ret);
+    }
+    return ret;
+}
+
+void USBCANDriver::WriteComplete2_Impl(
+    OSAction*  action,
+    IOReturn   status,
+    uint32_t   actualByteCount,
+    uint64_t   completionTimestamp)
+{
+    ivars->fTxInFlight2.store(false);
+
+    if (status != kIOReturnSuccess && status != kIOReturnAborted) {
+        DEXT_LOG("WriteComplete2 error: 0x%x (bytes=%u)", status, actualByteCount);
+        if (status == 0xe0005000 && ivars->fDataOutPipe2) {
+            kern_return_t clr = ivars->fDataOutPipe2->ClearStall(false);
+            DEXT_LOG("ClearStall OUT pipe2: 0x%x", clr);
+        }
+    }
+
+    if (status == kIOReturnSuccess && ivars->fIsRunning.load()) {
+        DrainTxRing();
+    }
+}
+
 kern_return_t USBCANDriver::SendData(const uint8_t* data, uint32_t length)
 {
     // If called with data, send raw bytes (backward compat for simulator path)
@@ -1138,15 +1227,39 @@ kern_return_t USBCANDriver::DrainTxRing()
 {
     if (!ivars->fRingHeader || !ivars->fBulkOutPipe) return kIOReturnNotReady;
 
-    auto sendFn = [this](const uint8_t* data, uint32_t len) -> kern_return_t {
+    auto sendCh0 = [this](const uint8_t* data, uint32_t len) -> kern_return_t {
         return this->SendRawBytes(data, len);
     };
 
-    const uint8_t* txData = shared_ring_tx_data_const(ivars->fRingHeader);
+    // PCAN dual-endpoint: drain tx0 → EP 0x02, tx1 → EP 0x03 independently
+    if (ivars->fDetectedProtocol == kCANProtocolPCAN &&
+        ivars->fDataOutPipe2 && ivars->fTxBuffer2 && ivars->fWriteAction2) {
+
+        auto sendCh1 = [this](const uint8_t* data, uint32_t len) -> kern_return_t {
+            return this->SendRawBytesChannel1(data, len);
+        };
+
+        auto& codec = std::get<pcan::Codec>(ivars->fCodec);
+        const uint8_t* tx0Data = shared_ring_tx0_data_const(ivars->fRingHeader);
+        const uint8_t* tx1Data = shared_ring_tx1_data_const(ivars->fRingHeader);
+
+        // Drain ch0 ring → EP 0x02
+        codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx0,
+                          tx0Data, ivars->fRingHeader->tx0Capacity,
+                          ivars->fTxInFlight.load(), sendCh0);
+        // Drain ch1 ring → EP 0x03
+        codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx1,
+                          tx1Data, ivars->fRingHeader->tx1Capacity,
+                          ivars->fTxInFlight2.load(), sendCh1);
+        return kIOReturnSuccess;
+    }
+
+    // Single-endpoint path (SLCAN, gs_usb, or PCAN fallback)
+    const uint8_t* tx0Data = shared_ring_tx0_data_const(ivars->fRingHeader);
 
     return std::visit([&](auto& codec) {
-        return codec.drainTx(ivars->fRingHeader, txData,
-                             ivars->fTxInFlight.load(), sendFn);
+        return codec.drainTx(ivars->fRingHeader, tx0Data,
+                             ivars->fTxInFlight.load(), sendCh0);
     }, ivars->fCodec);
 }
 
