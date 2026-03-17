@@ -19,10 +19,6 @@ struct ContentView: View {
                 switch selectedTab {
                 case .dashboard:
                     DashboardView(viewModel: viewModel)
-                case .charts:
-                    // Create an empty ChartsView placeholder here, or extract it if needed
-                    // From original code it was around line 766
-                    Text("Charts View Moved to Dashboard in Refactor")
                 case .messages:
                     MessageLogView(viewModel: viewModel)
                 case .bandwidth:

@@ -7,7 +7,6 @@ import os.log
 // Dashboard Tabs
 enum DashboardTab: String, CaseIterable {
     case dashboard = "Dashboard"
-    case charts = "Charts"
     case messages = "Messages"
     case bandwidth = "Test 1"
     case bidir = "Test 2"
@@ -16,7 +15,6 @@ enum DashboardTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .dashboard: return "gauge.with.dots.needle.bottom.100percent"
-        case .charts: return "chart.xyaxis.line"
         case .messages: return "list.bullet.rectangle.portrait"
         case .bandwidth: return "speedometer"
         case .bidir: return "arrow.left.arrow.right"
