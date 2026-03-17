@@ -5,17 +5,27 @@ import os.log
 
 private let dashLog = OSLog(subsystem: "com.hhkblogi.ican", category: "Dashboard")
 
-struct PortInfo: Hashable, Identifiable {
-    let name: String        // "PCAN Ch0", "SLCAN", "gs_usb", etc.
-    let deviceIndex: Int    // index among all known USB CAN adapters
-    let channel: Int        // 0 for single-channel adapters, 0 or 1 for PCAN
+struct CANInterface: Hashable, Identifiable {
+    let interfaceName: String  // "can0", "can1", "can2", ...
+    let codec: String          // "slcan", "gs_usb", "pcan"
+    let adapterName: String    // "CANable", "candleLight", "PCAN-USB Pro FD"
+    let deviceIndex: Int       // index among all known USB CAN adapters
+    let channel: Int           // 0 for single-channel, 0 or 1 for multi-channel
 
     var id: String { "\(deviceIndex):\(channel)" }
 }
 
+// For grouping interfaces by USB adapter in the UI
+struct USBAdapter: Identifiable {
+    let name: String
+    let deviceIndex: Int
+    let interfaces: [CANInterface]
+
+    var id: Int { deviceIndex }
+}
+
 @MainActor
 class CANDashboardViewModel: ObservableObject {
-    @Published var selectedBus: BusSelection = .all
     @Published var isLive: Bool = true
 
     // Core Data
@@ -31,10 +41,10 @@ class CANDashboardViewModel: ObservableObject {
     // Hardware State
     @Published var adapter1: SerialAdapter
     @Published var adapter2: SerialAdapter
-    @Published var availablePorts: [PortInfo] = []
+    @Published var availableInterfaces: [CANInterface] = []
+    @Published var usbAdapters: [USBAdapter] = []
     @Published var selectedBitrate: CANBitrate = .kbps1000
     @Published var canFDEnabled = false
-    @Published var useSimulatedData = false
     @Published var lastError: String?
     
     // Bandwidth Test Properties
@@ -103,8 +113,8 @@ class CANDashboardViewModel: ObservableObject {
     }
     
     init() {
-        adapter1 = SerialAdapter(name: "Adapter 1", adapterIndex: 0)
-        adapter2 = SerialAdapter(name: "Adapter 2", adapterIndex: 1)
+        adapter1 = SerialAdapter(name: "can0", adapterIndex: 0)
+        adapter2 = SerialAdapter(name: "can1", adapterIndex: 1)
         
         setupBusStatuses()
         refreshPorts()
@@ -122,21 +132,23 @@ class CANDashboardViewModel: ObservableObject {
     
     private func setupBusStatuses() {
         busStatuses = [
-            BusStatus(name: "Adapter 1", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false),
-            BusStatus(name: "Adapter 2", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false)
+            BusStatus(name: "can0", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false),
+            BusStatus(name: "can1", messageRate: 0, messageCount: 0, busLoad: 0, isConnected: false, isActive: false)
         ]
     }
     
     func refreshPorts() {
         // Scan all known CAN adapter VID/PID pairs
-        let knownAdapters: [(name: String, vid: Int, pid: Int, channels: Int)] = [
-            ("SLCAN",    0x16D0, 0x117E, 1),
-            ("gs_usb",   0x1D50, 0x606F, 1),
-            ("PCAN",     0x0C72, 0x0011, 2),  // PCAN-USB Pro FD = 2 channels
+        let knownAdapters: [(adapterName: String, codec: String, vid: Int, pid: Int, channels: Int)] = [
+            ("CANable",          "slcan",  0x16D0, 0x117E, 1),
+            ("candleLight",      "gs_usb", 0x1D50, 0x606F, 1),
+            ("PCAN-USB Pro FD",  "pcan",   0x0C72, 0x0011, 2),
         ]
 
-        var ports: [PortInfo] = []
+        var interfaces: [CANInterface] = []
+        var adapters: [USBAdapter] = []
         var deviceIndex = 0
+        var canIndex = 0
 
         for adapter in knownAdapters {
             guard let usbMatchCF = IOServiceMatching("IOUSBHostDevice") else { continue }
@@ -147,13 +159,24 @@ class CANDashboardViewModel: ObservableObject {
             if IOServiceGetMatchingServices(kIOMainPortDefault, usbMatch as CFDictionary, &usbIter) == KERN_SUCCESS {
                 var s = IOIteratorNext(usbIter)
                 while s != 0 {
-                    if adapter.channels == 1 {
-                        ports.append(PortInfo(name: adapter.name, deviceIndex: deviceIndex, channel: 0))
-                    } else {
-                        for ch in 0..<adapter.channels {
-                            ports.append(PortInfo(name: "\(adapter.name) Ch\(ch)", deviceIndex: deviceIndex, channel: ch))
-                        }
+                    var adapterInterfaces: [CANInterface] = []
+                    for ch in 0..<adapter.channels {
+                        let iface = CANInterface(
+                            interfaceName: "can\(canIndex)",
+                            codec: adapter.codec,
+                            adapterName: adapter.adapterName,
+                            deviceIndex: deviceIndex,
+                            channel: ch
+                        )
+                        interfaces.append(iface)
+                        adapterInterfaces.append(iface)
+                        canIndex += 1
                     }
+                    adapters.append(USBAdapter(
+                        name: adapter.adapterName,
+                        deviceIndex: deviceIndex,
+                        interfaces: adapterInterfaces
+                    ))
                     deviceIndex += 1
                     IOObjectRelease(s)
                     s = IOIteratorNext(usbIter)
@@ -162,16 +185,17 @@ class CANDashboardViewModel: ObservableObject {
             }
         }
 
-        availablePorts = ports
-        if ports.count >= 1 && adapter1.selectedPort.isEmpty {
-            adapter1.selectedPort = ports[0].id
-            adapter1.adapterIndex = ports[0].deviceIndex
-            adapter1.channel = ports[0].channel
+        availableInterfaces = interfaces
+        usbAdapters = adapters
+        if interfaces.count >= 1 && adapter1.selectedPort.isEmpty {
+            adapter1.selectedPort = interfaces[0].id
+            adapter1.adapterIndex = interfaces[0].deviceIndex
+            adapter1.channel = interfaces[0].channel
         }
-        if ports.count >= 2 && adapter2.selectedPort.isEmpty {
-            adapter2.selectedPort = ports[1].id
-            adapter2.adapterIndex = ports[1].deviceIndex
-            adapter2.channel = ports[1].channel
+        if interfaces.count >= 2 && adapter2.selectedPort.isEmpty {
+            adapter2.selectedPort = interfaces[1].id
+            adapter2.adapterIndex = interfaces[1].deviceIndex
+            adapter2.channel = interfaces[1].channel
         }
     }
     
@@ -197,28 +221,33 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func openCANChannels() {
-        if adapter1.isConnected {
-            adapter1.openCANChannel(bitrate: selectedBitrate)
-            if let c = adapter1.ioClient {
-                dashEngine1 = DashboardMetricsEngine()
-                dashEngine1.start(c.canClient())
-            }
-        }
-        if adapter2.isConnected {
-            adapter2.openCANChannel(bitrate: selectedBitrate)
-            if let c = adapter2.ioClient {
-                dashEngine2 = DashboardMetricsEngine()
-                dashEngine2.start(c.canClient())
-            }
+        openCANChannel(for: adapter1)
+        openCANChannel(for: adapter2)
+    }
+
+    func closeCANChannels() {
+        closeCANChannel(for: adapter1)
+        closeCANChannel(for: adapter2)
+    }
+
+    func openCANChannel(for adapter: SerialAdapter) {
+        guard adapter.isConnected && !adapter.isCANOpen else { return }
+        adapter.openCANChannel(bitrate: adapter.selectedBitrate)
+        if adapter === adapter1, let c = adapter.ioClient {
+            dashEngine1 = DashboardMetricsEngine()
+            dashEngine1.start(c.canClient())
+        } else if adapter === adapter2, let c = adapter.ioClient {
+            dashEngine2 = DashboardMetricsEngine()
+            dashEngine2.start(c.canClient())
         }
         updateBusStatuses()
     }
 
-    func closeCANChannels() {
-        dashEngine1.stop()
-        dashEngine2.stop()
-        adapter1.closeCANChannel()
-        adapter2.closeCANChannel()
+    func closeCANChannel(for adapter: SerialAdapter) {
+        guard adapter.isCANOpen else { return }
+        if adapter === adapter1 { dashEngine1.stop() }
+        else if adapter === adapter2 { dashEngine2.stop() }
+        adapter.closeCANChannel()
         updateBusStatuses()
     }
     
@@ -250,12 +279,13 @@ class CANDashboardViewModel: ObservableObject {
             metrics.throughput = totalByteRate / 1024.0
 
             let bitsPerFrame = 130.0
-            let busCapacity = max(Double(selectedBitrate.rawValue), 1.0)
+            let bus0Capacity = max(Double(adapter1.selectedBitrate.rawValue), 1.0)
+            let bus1Capacity = max(Double(adapter2.selectedBitrate.rawValue), 1.0)
             let rate1MsgSec = Double(rate1.messages) / elapsed
             let rate2MsgSec = Double(rate2.messages) / elapsed
-            let bus0Load = min(rate1MsgSec * bitsPerFrame / busCapacity * 100, 100)
-            let bus1Load = min(rate2MsgSec * bitsPerFrame / busCapacity * 100, 100)
-            metrics.busLoad = min(totalMsgRate * bitsPerFrame / busCapacity * 100, 100)
+            let bus0Load = min(rate1MsgSec * bitsPerFrame / bus0Capacity * 100, 100)
+            let bus1Load = min(rate2MsgSec * bitsPerFrame / bus1Capacity * 100, 100)
+            metrics.busLoad = max(bus0Load, bus1Load)
 
             busStatuses[0].messageRate = rate1MsgSec
             busStatuses[1].messageRate = rate2MsgSec
@@ -311,13 +341,13 @@ class CANDashboardViewModel: ObservableObject {
         withUnsafeBytes(of: snap1.recentFrames) { buf in
             for i in 0..<min(Int(snap1.recentFrameCount), 100) {
                 let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 1", snapDuration: snap1.duration))
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "can0", snapDuration: snap1.duration))
             }
         }
         withUnsafeBytes(of: snap2.recentFrames) { buf in
             for i in 0..<min(Int(snap2.recentFrameCount), 100) {
                 let rf = buf.load(fromByteOffset: i * MemoryLayout<RecentFrame>.stride, as: RecentFrame.self)
-                newMessages.append(recentFrameToLogMessage(rf, adapter: "Adapter 2", snapDuration: snap2.duration))
+                newMessages.append(recentFrameToLogMessage(rf, adapter: "can1", snapDuration: snap2.duration))
             }
         }
         newMessages.sort { $0.timestamp > $1.timestamp }
@@ -359,11 +389,6 @@ class CANDashboardViewModel: ObservableObject {
         busStatuses[1].isConnected = adapter2.isConnected
         busStatuses[1].isActive = adapter2.isCANOpen
         busStatuses[1].busLoad = adapter2.isCANOpen ? metrics.busLoad * 0.8 : 0
-    }
-    
-    // Sim data generator...
-    private func generateSimulatedMessage() {
-        // Simple mock implementation
     }
     
     func clearMessages() {

@@ -6,8 +6,8 @@ import os.log
 
 // Dashboard Tabs
 enum DashboardTab: String, CaseIterable {
+    case ports = "Interfaces"
     case dashboard = "Dashboard"
-    case charts = "Charts"
     case messages = "Messages"
     case bandwidth = "Test 1"
     case bidir = "Test 2"
@@ -15,8 +15,8 @@ enum DashboardTab: String, CaseIterable {
 
     var icon: String {
         switch self {
+        case .ports: return "cable.connector"
         case .dashboard: return "gauge.with.dots.needle.bottom.100percent"
-        case .charts: return "chart.xyaxis.line"
         case .messages: return "list.bullet.rectangle.portrait"
         case .bandwidth: return "speedometer"
         case .bidir: return "arrow.left.arrow.right"
@@ -33,99 +33,11 @@ enum BusSelection: String, CaseIterable {
 }
 
 struct HeaderView: View {
-    @Binding var selectedBus: BusSelection
     @Binding var selectedTab: DashboardTab
     @ObservedObject var viewModel: CANDashboardViewModel
-    @Binding var showConnectionSheet: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                // Logo
-                HStack(spacing: 10) {
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .mask(Image(systemName: "bolt.car.fill").font(.system(size: 24, weight: .bold)))
-                    .frame(width: 30, height: 30)
-                    
-                    Text("AutoCAN Dashboard")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                }
-                
-                Spacer()
-
-                // CAN Open Status Indicator
-                if viewModel.isCANOpen {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 8, height: 8)
-                        Text("CAN Open")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.green)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(8)
-                }
-                
-                // Connection Status Button
-                Button {
-                    showConnectionSheet = true
-                } label: {
-                    HStack {
-                        Circle()
-                            .fill(viewModel.connectionStatusColor)
-                            .frame(width: 8, height: 8)
-                        Text(viewModel.connectionStatusText)
-                            .fontWeight(.medium)
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-
-                // Bus Selector
-                Menu {
-                    ForEach(BusSelection.allCases, id: \.self) { bus in
-                        Button {
-                            selectedBus = bus
-                        } label: {
-                            HStack {
-                                Text(bus.rawValue)
-                                if selectedBus == bus {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "slider.horizontal.3")
-                        Text(selectedBus.rawValue)
-                    }
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            
             // Tab Bar
             HStack(spacing: 4) {
                 ForEach(DashboardTab.allCases, id: \.self) { tab in
@@ -145,10 +57,29 @@ struct HeaderView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                Spacer()
+
+                // Compact connection status
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(viewModel.connectionStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(viewModel.connectionStatusText)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    if viewModel.isCANOpen {
+                        Text("CAN Open")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
             .padding(.horizontal)
-            .padding(.bottom, 12)
-            
+            .padding(.vertical, 8)
+
             Divider()
         }
         .background(.ultraThinMaterial)

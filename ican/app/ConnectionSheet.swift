@@ -1,159 +1,155 @@
 import SwiftUI
 
-struct ConnectionSheet: View {
+struct PortsView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // Adapter 1 Section
-                Section("Adapter 1 (TX/RX)") {
-                    AdapterConnectionSection(
-                        adapter: viewModel.adapter1,
-                        availablePorts: viewModel.availablePorts,
-                        onRefresh: { viewModel.refreshPorts() },
-                        onConnect: { viewModel.connectAdapter(viewModel.adapter1) }
-                    )
-                }
-
-                // Adapter 2 Section
-                Section("Adapter 2 (RX/TX)") {
-                    AdapterConnectionSection(
-                        adapter: viewModel.adapter2,
-                        availablePorts: viewModel.availablePorts,
-                        onRefresh: { viewModel.refreshPorts() },
-                        onConnect: { viewModel.connectAdapter(viewModel.adapter2) }
-                    )
-                }
-
-                // CAN Settings
-                Section("CAN Settings") {
-                    Picker("Bitrate", selection: $viewModel.selectedBitrate) {
-                        ForEach(CANBitrate.allCases) { bitrate in
-                            Text(bitrate.description).tag(bitrate)
-                        }
-                    }
-                    
-                    Toggle("CAN FD Enabled", isOn: $viewModel.canFDEnabled)
-                    
-                    if viewModel.canFDEnabled {
-                        Text("Note: DSD TECH adapters support up to 5M data phase bitrate.")
-                            .font(.caption)
+        Form {
+            if viewModel.usbAdapters.isEmpty {
+                Section("USB Adapters") {
+                    HStack {
+                        Image(systemName: "cable.connector.slash")
+                            .foregroundColor(.secondary)
+                        Text("No USB CAN adapters detected")
                             .foregroundColor(.secondary)
                     }
-                    
-                    HStack {
-                        Button {
-                            viewModel.openCANChannels()
-                        } label: {
-                            Label("Open CAN Channels", systemImage: "play.fill")
+                    Button("Refresh") { viewModel.refreshPorts() }
+                        .font(.caption)
+                }
+            } else {
+                ForEach(viewModel.usbAdapters) { adapter in
+                    Section("USB Adapter \(adapter.deviceIndex): \(adapter.name)") {
+                        ForEach(adapter.interfaces) { iface in
+                            InterfaceSection(
+                                iface: iface,
+                                adapter: adapterFor(iface),
+                                onConnect: { viewModel.connectAdapter(adapterFor(iface)) },
+                                onOpenCAN: { viewModel.openCANChannel(for: adapterFor(iface)) },
+                                onCloseCAN: { viewModel.closeCANChannel(for: adapterFor(iface)) }
+                            )
                         }
-                        .disabled(!viewModel.adapter1.isConnected && !viewModel.adapter2.isConnected || viewModel.isCANOpen)
-                        .buttonStyle(.borderedProminent)
-                        
-                        if viewModel.isCANOpen {
-                            Button {
-                                viewModel.closeCANChannels()
-                            } label: {
-                                Label("Close CAN Channels", systemImage: "power")
-                            }
-                            .foregroundColor(.orange)
-                        }
+                        Button("Refresh") { viewModel.refreshPorts() }
+                            .font(.caption)
                     }
                 }
+            }
 
-                // Data Mode
-                Section("Data Source") {
-                    Toggle("Use Simulated Data", isOn: $viewModel.useSimulatedData)
-                    
-                    if viewModel.useSimulatedData {
-                        Text("Simulated data will be injected into the stream for testing without hardware.")
-                            .font(.caption)
-                    } else if !viewModel.isCANOpen {
-                        Text("Connect hardware and open CAN channels to see live data.")
-                            .font(.caption)
-                    }
-                }
-                
-                // Diagnostic Section
-                Section("Driver Diagnostics") {
-                    DiagnosticView()
-                }
+            // Diagnostic Section
+            Section("Driver Diagnostics") {
+                DiagnosticView()
             }
-            .navigationTitle("Connections & Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
+        }
+    }
+
+    private func adapterFor(_ iface: CANInterface) -> SerialAdapter {
+        // Match by current selection or assign
+        if viewModel.adapter1.selectedPort == iface.id ||
+           (!viewModel.adapter1.isConnected && viewModel.adapter2.selectedPort != iface.id) {
+            if viewModel.adapter1.selectedPort != iface.id {
+                viewModel.adapter1.selectedPort = iface.id
+                viewModel.adapter1.adapterIndex = iface.deviceIndex
+                viewModel.adapter1.channel = iface.channel
             }
+            return viewModel.adapter1
+        } else {
+            if viewModel.adapter2.selectedPort != iface.id {
+                viewModel.adapter2.selectedPort = iface.id
+                viewModel.adapter2.adapterIndex = iface.deviceIndex
+                viewModel.adapter2.channel = iface.channel
+            }
+            return viewModel.adapter2
         }
     }
 }
 
-// Sub-component for individual adapter connection
-struct AdapterConnectionSection: View {
+// Per-interface section within a USB adapter
+struct InterfaceSection: View {
+    let iface: CANInterface
     @ObservedObject var adapter: SerialAdapter
-    let availablePorts: [PortInfo]
-    let onRefresh: () -> Void
     let onConnect: () -> Void
+    let onOpenCAN: () -> Void
+    let onCloseCAN: () -> Void
 
     var body: some View {
-        // Each element is a separate Form row so taps don't get swallowed by Picker
-        Picker("Port", selection: $adapter.selectedPort) {
-            Text("Select Port").tag("")
-            ForEach(availablePorts) { port in
-                Text(port.name).tag(port.id)
-            }
-        }
-        .onChange(of: adapter.selectedPort) { _, newValue in
-            if let port = availablePorts.first(where: { $0.id == newValue }) {
-                adapter.adapterIndex = port.deviceIndex
-                adapter.channel = port.channel
-            }
-        }
-
+        // Interface header
         HStack {
+            Text(iface.interfaceName)
+                .font(.headline)
+                .monospaced()
+            Text("(\(iface.codec))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Spacer()
+
             if adapter.isConnecting {
                 ProgressView()
                     .frame(width: 10, height: 10)
                 Text("Connecting...")
                     .foregroundColor(.orange)
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.caption)
+            } else if adapter.isConnected {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 8, height: 8)
+                Text("Connected")
+                    .font(.caption)
+                    .foregroundColor(.green)
             } else {
                 Circle()
-                    .fill(adapter.isConnected ? Color.green : Color.red)
-                    .frame(width: 10, height: 10)
-                Text(adapter.isConnected ? "Connected" : "Disconnected")
-                    .foregroundColor(adapter.isConnected ? .green : .red)
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-            }
-
-            Spacer()
-
-            if adapter.isConnected {
-                Button("Disconnect") {
-                    adapter.disconnect()
-                }
-                .foregroundColor(.red)
-            } else {
-                Button("Connect") {
-                    onConnect()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(adapter.selectedPort.isEmpty || adapter.isConnecting)
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                Text("Disconnected")
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
         }
 
-        if adapter.isCANOpen {
-            HStack {
-                Image(systemName: "bolt.car.fill")
-                    .foregroundColor(.green)
-                Text("CAN Channel Open")
+        // CAN settings (always visible, disabled when CAN is open)
+        Picker("Bitrate", selection: $adapter.selectedBitrate) {
+            ForEach(CANBitrate.allCases) { bitrate in
+                Text(bitrate.description).tag(bitrate)
+            }
+        }
+        .disabled(adapter.isCANOpen)
+
+        Toggle("CAN FD", isOn: $adapter.canFDEnabled)
+            .disabled(adapter.isCANOpen)
+
+        // Actions row
+        HStack {
+            if !adapter.isConnected {
+                Button("Connect") { onConnect() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(adapter.isConnecting)
+            } else if adapter.isCANOpen {
+                HStack(spacing: 6) {
+                    Circle().fill(.green).frame(width: 8, height: 8)
+                    Text("CAN Open").font(.caption).foregroundColor(.green)
+                }
+
+                Spacer()
+
+                Button { onCloseCAN() } label: {
+                    Label("Close CAN", systemImage: "stop.fill")
+                }
+                .foregroundColor(.orange)
+                .font(.caption)
+
+                Button("Disconnect") { adapter.disconnect() }
+                    .foregroundColor(.red)
                     .font(.caption)
-                    .foregroundColor(.green)
+            } else {
+                Button { onOpenCAN() } label: {
+                    Label("Open CAN", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+
+                Button("Disconnect") { adapter.disconnect() }
+                    .foregroundColor(.red)
+                    .font(.caption)
             }
         }
 
@@ -162,10 +158,5 @@ struct AdapterConnectionSection: View {
                 .font(.caption)
                 .foregroundColor(.red)
         }
-
-        Button("Refresh Ports") {
-            onRefresh()
-        }
-        .font(.caption)
     }
 }
