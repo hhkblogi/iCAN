@@ -18,7 +18,7 @@ struct PortsView: View {
                 }
             } else {
                 ForEach(viewModel.usbAdapters) { adapter in
-                    Section("USB Adapter: \(adapter.name)") {
+                    Section("USB Adapter \(adapter.deviceIndex): \(adapter.name)") {
                         ForEach(adapter.interfaces) { iface in
                             InterfaceSection(
                                 iface: iface,
