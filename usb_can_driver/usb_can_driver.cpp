@@ -347,6 +347,10 @@ void USBCANDriver::free()
             ivars->fWriteAction->release();
             ivars->fWriteAction = nullptr;
         }
+        if (ivars->fTxBuffer) {
+            ivars->fTxBuffer->release();
+            ivars->fTxBuffer = nullptr;
+        }
         if (ivars->fWriteAction2) {
             ivars->fWriteAction2->release();
             ivars->fWriteAction2 = nullptr;
@@ -1178,7 +1182,12 @@ kern_return_t USBCANDriver::SendRawBytesChannel1(const uint8_t* data, uint32_t l
     }
 
     uint64_t txAddr = 0, txLen = 0;
-    ivars->fTxBuffer2->Map(0, 0, 0, 0, &txAddr, &txLen);
+    kern_return_t mapRet = ivars->fTxBuffer2->Map(0, 0, 0, 0, &txAddr, &txLen);
+    if (mapRet != kIOReturnSuccess || txAddr == 0 || txLen < length) {
+        ivars->fTxInFlight2.store(false, std::memory_order_release);
+        DEXT_LOG("SendRawBytesChannel1: Map failed: 0x%x", mapRet);
+        return kIOReturnNoMemory;
+    }
     memcpy((void*)txAddr, data, length);
 
     kern_return_t ret = ivars->fDataOutPipe2->AsyncIO(
@@ -1244,23 +1253,39 @@ kern_return_t USBCANDriver::DrainTxRing()
         const uint8_t* tx1Data = shared_ring_tx1_data_const(ivars->fRingHeader);
 
         // Drain ch0 ring → EP 0x02
-        codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx0,
+        kern_return_t ret0 = codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx0,
                           tx0Data, ivars->fRingHeader->tx0Capacity,
                           ivars->fTxInFlight.load(), sendCh0);
         // Drain ch1 ring → EP 0x03
-        codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx1,
+        kern_return_t ret1 = codec.drainTxRing(ivars->fRingHeader, &ivars->fRingHeader->tx1,
                           tx1Data, ivars->fRingHeader->tx1Capacity,
                           ivars->fTxInFlight2.load(), sendCh1);
+        // Propagate first error, prefer error over busy over success
+        if (ret0 != kIOReturnSuccess && ret0 != kIOReturnBusy) return ret0;
+        if (ret1 != kIOReturnSuccess && ret1 != kIOReturnBusy) return ret1;
         return kIOReturnSuccess;
     }
 
     // Single-endpoint path (SLCAN, gs_usb, or PCAN fallback)
+    // Drain both tx0 and tx1 to EP 0x02 in case ch1 frames were queued
     const uint8_t* tx0Data = shared_ring_tx0_data_const(ivars->fRingHeader);
 
-    return std::visit([&](auto& codec) {
+    kern_return_t ret = std::visit([&](auto& codec) {
         return codec.drainTx(ivars->fRingHeader, tx0Data,
                              ivars->fTxInFlight.load(), sendCh0);
     }, ivars->fCodec);
+
+    // Also drain tx1 if it has data (PCAN fallback without EP 0x03)
+    if (ivars->fRingHeader->tx1Capacity > 0 && ivars->fRingHeader->channelCount >= 2) {
+        const uint8_t* tx1Data = shared_ring_tx1_data_const(ivars->fRingHeader);
+        std::visit([&](auto& codec) {
+            codec.drainTx(ivars->fRingHeader, tx1Data,
+                          ivars->fTxInFlight.load(),
+                          sendCh0);  // route ch1 through EP 0x02 as fallback
+        }, ivars->fCodec);
+    }
+
+    return ret;
 }
 
 void USBCANDriver::WriteComplete_Impl(

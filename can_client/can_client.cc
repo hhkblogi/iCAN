@@ -326,7 +326,7 @@ public:
         RingCtrl* txCtrl;
         uint8_t* txData;
         uint32_t cap;
-        if (channel == 1 && ringHeader->tx1Capacity > 0) {
+        if (channel == 1 && ringHeader->channelCount >= 2 && ringHeader->tx1Capacity > 0) {
             txCtrl = &ringHeader->tx1;
             txData = shared_ring_tx1_data(ringHeader);
             cap = ringHeader->tx1Capacity;
