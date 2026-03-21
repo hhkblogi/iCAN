@@ -17,16 +17,18 @@ struct PortsView: View {
                         .font(.caption)
                 }
             } else {
-                ForEach(viewModel.usbAdapters) { adapter in
-                    Section("USB Adapter \(adapter.deviceIndex): \(adapter.name)") {
-                        ForEach(adapter.interfaces) { iface in
-                            InterfaceSection(
-                                iface: iface,
-                                adapter: adapterFor(iface),
-                                onConnect: { viewModel.connectAdapter(adapterFor(iface)) },
-                                onOpenCAN: { viewModel.openCANChannel(for: adapterFor(iface)) },
-                                onCloseCAN: { viewModel.closeCANChannel(for: adapterFor(iface)) }
-                            )
+                ForEach(viewModel.usbAdapters) { usbAdapter in
+                    Section("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)") {
+                        ForEach(usbAdapter.interfaces) { iface in
+                            if let adapter = viewModel.adapterForInterface(iface) {
+                                InterfaceSection(
+                                    iface: iface,
+                                    adapter: adapter,
+                                    onConnect: { viewModel.connectAdapter(adapter) },
+                                    onOpenCAN: { viewModel.openCANChannel(for: adapter) },
+                                    onCloseCAN: { viewModel.closeCANChannel(for: adapter) }
+                                )
+                            }
                         }
                         Button("Refresh") { viewModel.refreshPorts() }
                             .font(.caption)
@@ -38,26 +40,6 @@ struct PortsView: View {
             Section("Driver Diagnostics") {
                 DiagnosticView()
             }
-        }
-    }
-
-    private func adapterFor(_ iface: CANInterface) -> SerialAdapter {
-        // Match by current selection or assign
-        if viewModel.adapter1.selectedPort == iface.id ||
-           (!viewModel.adapter1.isConnected && viewModel.adapter2.selectedPort != iface.id) {
-            if viewModel.adapter1.selectedPort != iface.id {
-                viewModel.adapter1.selectedPort = iface.id
-                viewModel.adapter1.adapterIndex = iface.deviceIndex
-                viewModel.adapter1.channel = iface.channel
-            }
-            return viewModel.adapter1
-        } else {
-            if viewModel.adapter2.selectedPort != iface.id {
-                viewModel.adapter2.selectedPort = iface.id
-                viewModel.adapter2.adapterIndex = iface.deviceIndex
-                viewModel.adapter2.channel = iface.channel
-            }
-            return viewModel.adapter2
         }
     }
 }
