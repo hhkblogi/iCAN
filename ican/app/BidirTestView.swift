@@ -192,7 +192,7 @@ struct BidirTestView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
-                        .disabled(!viewModel.bothTestAdaptersReady)
+                        .disabled(!viewModel.bothDefaultAdaptersReady)
                     } else {
                         Button {
                             viewModel.stopBidirTest()
@@ -219,7 +219,7 @@ struct BidirTestView: View {
                 }
                 .padding(.horizontal)
 
-                if !viewModel.bothTestAdaptersReady {
+                if !viewModel.bothDefaultAdaptersReady {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)

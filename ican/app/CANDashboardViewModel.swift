@@ -46,6 +46,10 @@ class CANDashboardViewModel: ObservableObject {
     @Published var canFDEnabled = false
     @Published var lastError: String?
 
+    // Test Interface Selection (user picks which interfaces to use)
+    @Published var testInterfaceAIndex: Int = 0
+    @Published var testInterfaceBIndex: Int = 1
+
     // Bandwidth Test Properties
     @Published var isBandwidthTestRunning = false
     @Published var bandwidthStats = BandwidthTestStats()
@@ -54,7 +58,7 @@ class CANDashboardViewModel: ObservableObject {
     @Published var testUseFD = false
     @Published var testBurstSize: Int = 1
     @Published var testTargetRate: Int = 4000  // msg/s per direction
-    @Published var testDirection: Int = 0  // 0 = A1→A2, 1 = A2→A1
+    @Published var testDirection: Int = 0  // 0 = A→B, 1 = B→A
 
     // Bidirectional Test Properties
     @Published var isBidirTestRunning = false
@@ -213,6 +217,18 @@ class CANDashboardViewModel: ObservableObject {
         }
 
         setupBusStatuses()
+
+        // Clamp test interface indices to valid range
+        if adapters.count > 0 {
+            testInterfaceAIndex = min(testInterfaceAIndex, adapters.count - 1)
+            testInterfaceBIndex = min(testInterfaceBIndex, adapters.count - 1)
+            if testInterfaceAIndex == testInterfaceBIndex && adapters.count > 1 {
+                testInterfaceBIndex = testInterfaceAIndex == 0 ? 1 : 0
+            }
+        } else {
+            testInterfaceAIndex = 0
+            testInterfaceBIndex = 0
+        }
     }
 
     /// Returns the SerialAdapter assigned to a given interface, or nil.
@@ -421,25 +437,42 @@ class CANDashboardViewModel: ObservableObject {
 
     // MARK: - Tests
 
-    /// Convenience accessors for tests that need exactly 2 adapters.
-    private var testAdapter1: SerialAdapter? { adapters.count > 0 ? adapters[0] : nil }
-    private var testAdapter2: SerialAdapter? { adapters.count > 1 ? adapters[1] : nil }
-
-    /// Whether the first two adapters are both CAN-open (required for 2-adapter tests).
-    var bothTestAdaptersReady: Bool {
-        guard let a1 = testAdapter1, let a2 = testAdapter2 else { return false }
-        return a1.isCANOpen && a2.isCANOpen
+    /// Selected test interfaces (user-configurable via Interface A/B pickers).
+    var testAdapterA: SerialAdapter? {
+        guard testInterfaceAIndex >= 0 && testInterfaceAIndex < adapters.count else { return nil }
+        return adapters[testInterfaceAIndex]
+    }
+    var testAdapterB: SerialAdapter? {
+        guard testInterfaceBIndex >= 0 && testInterfaceBIndex < adapters.count else { return nil }
+        return adapters[testInterfaceBIndex]
     }
 
-    /// Whether the first adapter is CAN-open (required for single-adapter tests).
+    /// Whether both selected Test 1 interfaces are CAN-open and different.
+    var bothTestAdaptersReady: Bool {
+        guard let a = testAdapterA, let b = testAdapterB else { return false }
+        return a.isCANOpen && b.isCANOpen && testInterfaceAIndex != testInterfaceBIndex
+    }
+
+    /// Whether the first two adapters are CAN-open (for Test 2 which uses adapters[0]/[1]).
+    var bothDefaultAdaptersReady: Bool {
+        guard adapters.count >= 2 else { return false }
+        return adapters[0].isCANOpen && adapters[1].isCANOpen
+    }
+
+    /// Whether the first adapter is CAN-open (for Test 3 which uses adapters[0]).
     var firstAdapterReady: Bool {
-        testAdapter1?.isCANOpen ?? false
+        adapters.first?.isCANOpen ?? false
+    }
+
+    /// Whether any test is currently running.
+    var anyTestRunning: Bool {
+        isBandwidthTestRunning || isBidirTestRunning || isDistBidirTestRunning
     }
 
     func startBandwidthTest() {
-        guard let a1 = testAdapter1, let a2 = testAdapter2,
-              a1.isCANOpen && a2.isCANOpen else { return }
-        guard !isBandwidthTestRunning && !isBidirTestRunning && !isDistBidirTestRunning else { return }
+        guard bothTestAdaptersReady else { return }
+        guard let a1 = testAdapterA, let a2 = testAdapterB else { return }
+        guard !anyTestRunning else { return }
 
         let txAdapter = testDirection == 0 ? a1.ioClient : a2.ioClient
         let rxAdapter = testDirection == 0 ? a2.ioClient : a1.ioClient
@@ -504,7 +537,8 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func startBidirTest() {
-        guard let a1 = testAdapter1, let a2 = testAdapter2,
+        guard adapters.count >= 2,
+              let a1 = adapters.first, let a2 = adapters.dropFirst().first,
               a1.isCANOpen && a2.isCANOpen else { return }
         guard !isBidirTestRunning && !isBandwidthTestRunning && !isDistBidirTestRunning else { return }
 
@@ -528,7 +562,8 @@ class CANDashboardViewModel: ObservableObject {
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                guard let c1 = self.testAdapter1?.ioClient, let c2 = self.testAdapter2?.ioClient else { return }
+                guard self.adapters.count >= 2,
+                      let c1 = self.adapters[0].ioClient, let c2 = self.adapters[1].ioClient else { return }
                 let snap1 = self.bidirEngine.snapshotA1toA2()
                 self.bidirStats.a1toA2.messagesSent = Int(snap1.messagesSent)
                 self.bidirStats.a1toA2.messagesReceived = Int(snap1.messagesReceived)
@@ -628,7 +663,7 @@ class CANDashboardViewModel: ObservableObject {
     // MARK: - Distributed Bidirectional Test
 
     func startDistBidirTest() {
-        guard let a1 = testAdapter1, a1.isCANOpen else { return }
+        guard let a1 = adapters.first, a1.isCANOpen else { return }
         guard !isDistBidirTestRunning && !isBandwidthTestRunning && !isBidirTestRunning else { return }
 
         guard let c1 = a1.ioClient else {
