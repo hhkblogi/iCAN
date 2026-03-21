@@ -6,7 +6,7 @@ module(
 )
 
 # Apple build rules
-bazel_dep(name = "rules_apple", version = "4.0.1")
+bazel_dep(name = "rules_apple", version = "4.3.3")
 bazel_dep(name = "rules_swift", version = "3.1.1")
 bazel_dep(name = "apple_support", version = "1.23.1")
 bazel_dep(name = "rules_cc", version = "0.1.2")

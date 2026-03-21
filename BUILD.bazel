@@ -79,6 +79,7 @@ xcode_provisioning_profile(
 
 ios_application(
     name = "iCAN_app",
+    app_icons = ["//ican:AppIcon"],
     bundle_id = "com.hhkblogi.ican",
     entitlements = "//ican:iCAN.entitlements",
     families = ["ipad"],
