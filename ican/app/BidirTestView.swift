@@ -4,30 +4,34 @@ import Charts
 struct BidirTestView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
 
-    private var adapter1IsOpen: Bool { viewModel.adapters.count > 0 && viewModel.adapters[0].isCANOpen }
-    private var adapter2IsOpen: Bool { viewModel.adapters.count > 1 && viewModel.adapters[1].isCANOpen }
+    private var interfaceAIsOpen: Bool { viewModel.bidirAdapterA?.isCANOpen ?? false }
+    private var interfaceBIsOpen: Bool { viewModel.bidirAdapterB?.isCANOpen ?? false }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Connection Status Card
+                // Interface Selection + Status
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Adapter Status")
+                    Text("Interface Selection")
                         .font(.headline)
 
                     HStack(spacing: 20) {
-                        // Adapter 1 Status
+                        // Interface A
                         VStack(spacing: 8) {
                             Image(systemName: "arrow.up.arrow.down.circle.fill")
                                 .font(.title)
-                                .foregroundColor(adapter1IsOpen ? .blue : .red)
-                            Text("Adapter 1 (A1)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(adapter1IsOpen ? "Ready" : "Closed")
+                                .foregroundColor(interfaceAIsOpen ? .blue : .red)
+                            Picker("Interface A", selection: $viewModel.bidirInterfaceAIndex) {
+                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                    Text(adapter.name).tag(idx)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .disabled(viewModel.anyTestRunning)
+                            Text(interfaceAIsOpen ? "Ready" : "Not Open")
                                 .font(.caption)
-                                .foregroundColor(adapter1IsOpen ? .green : .red)
-                            if adapter1IsOpen {
+                                .foregroundColor(interfaceAIsOpen ? .green : .red)
+                            if interfaceAIsOpen {
                                 Text("TX: 0x200 / RX: 0x201")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -54,18 +58,22 @@ struct BidirTestView: View {
                                 .foregroundColor(.orange)
                         }
 
-                        // Adapter 2 Status
+                        // Interface B
                         VStack(spacing: 8) {
                             Image(systemName: "arrow.up.arrow.down.circle.fill")
                                 .font(.title)
-                                .foregroundColor(adapter2IsOpen ? .orange : .red)
-                            Text("Adapter 2 (A2)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(adapter2IsOpen ? "Ready" : "Closed")
+                                .foregroundColor(interfaceBIsOpen ? .orange : .red)
+                            Picker("Interface B", selection: $viewModel.bidirInterfaceBIndex) {
+                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                    Text(adapter.name).tag(idx)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .disabled(viewModel.anyTestRunning)
+                            Text(interfaceBIsOpen ? "Ready" : "Not Open")
                                 .font(.caption)
-                                .foregroundColor(adapter2IsOpen ? .green : .red)
-                            if adapter2IsOpen {
+                                .foregroundColor(interfaceBIsOpen ? .green : .red)
+                            if interfaceBIsOpen {
                                 Text("TX: 0x201 / RX: 0x200")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -192,7 +200,7 @@ struct BidirTestView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
-                        .disabled(!viewModel.bothDefaultAdaptersReady)
+                        .disabled(!viewModel.bothBidirAdaptersReady || viewModel.anyTestRunning)
                     } else {
                         Button {
                             viewModel.stopBidirTest()
@@ -219,11 +227,35 @@ struct BidirTestView: View {
                 }
                 .padding(.horizontal)
 
-                if !viewModel.bothDefaultAdaptersReady {
+                if viewModel.adapters.count < 2 {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
-                        Text("Both adapters must be connected and CAN channels open to run tests.")
+                        Text("At least two CAN interfaces are required for this test.")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                } else if viewModel.bidirInterfaceAIndex == viewModel.bidirInterfaceBIndex {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text("Interface A and B must be different.")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+                    .padding()
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                } else if !viewModel.bothBidirAdaptersReady {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Both interfaces must have CAN channels open.")
                             .font(.subheadline)
                             .foregroundColor(.orange)
                     }

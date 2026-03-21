@@ -47,8 +47,12 @@ class CANDashboardViewModel: ObservableObject {
     @Published var lastError: String?
 
     // Test Interface Selection (user picks which interfaces to use)
+    // Test 1 (Bandwidth)
     @Published var testInterfaceAIndex: Int = 0
     @Published var testInterfaceBIndex: Int = 1
+    // Test 2 (Bidirectional)
+    @Published var bidirInterfaceAIndex: Int = 0
+    @Published var bidirInterfaceBIndex: Int = 1
 
     // Bandwidth Test Properties
     @Published var isBandwidthTestRunning = false
@@ -211,14 +215,22 @@ class CANDashboardViewModel: ObservableObject {
 
         // Clamp test interface indices to valid range
         if adapters.count > 0 {
-            testInterfaceAIndex = min(testInterfaceAIndex, adapters.count - 1)
-            testInterfaceBIndex = min(testInterfaceBIndex, adapters.count - 1)
+            let maxIdx = adapters.count - 1
+            testInterfaceAIndex = min(testInterfaceAIndex, maxIdx)
+            testInterfaceBIndex = min(testInterfaceBIndex, maxIdx)
+            bidirInterfaceAIndex = min(bidirInterfaceAIndex, maxIdx)
+            bidirInterfaceBIndex = min(bidirInterfaceBIndex, maxIdx)
             if testInterfaceAIndex == testInterfaceBIndex && adapters.count > 1 {
                 testInterfaceBIndex = testInterfaceAIndex == 0 ? 1 : 0
+            }
+            if bidirInterfaceAIndex == bidirInterfaceBIndex && adapters.count > 1 {
+                bidirInterfaceBIndex = bidirInterfaceAIndex == 0 ? 1 : 0
             }
         } else {
             testInterfaceAIndex = 0
             testInterfaceBIndex = 0
+            bidirInterfaceAIndex = 0
+            bidirInterfaceBIndex = 0
         }
     }
 
@@ -444,10 +456,20 @@ class CANDashboardViewModel: ObservableObject {
         return a.isCANOpen && b.isCANOpen && testInterfaceAIndex != testInterfaceBIndex
     }
 
-    /// Whether the first two adapters are CAN-open (for Test 2 which uses adapters[0]/[1]).
-    var bothDefaultAdaptersReady: Bool {
-        guard adapters.count >= 2 else { return false }
-        return adapters[0].isCANOpen && adapters[1].isCANOpen
+    /// Selected Test 2 interfaces (user-configurable via Interface A/B pickers).
+    var bidirAdapterA: SerialAdapter? {
+        guard bidirInterfaceAIndex >= 0 && bidirInterfaceAIndex < adapters.count else { return nil }
+        return adapters[bidirInterfaceAIndex]
+    }
+    var bidirAdapterB: SerialAdapter? {
+        guard bidirInterfaceBIndex >= 0 && bidirInterfaceBIndex < adapters.count else { return nil }
+        return adapters[bidirInterfaceBIndex]
+    }
+
+    /// Whether both selected Test 2 interfaces are CAN-open and different.
+    var bothBidirAdaptersReady: Bool {
+        guard let a = bidirAdapterA, let b = bidirAdapterB else { return false }
+        return a.isCANOpen && b.isCANOpen && bidirInterfaceAIndex != bidirInterfaceBIndex
     }
 
     /// Whether any test is currently running.
@@ -523,13 +545,12 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     func startBidirTest() {
-        guard adapters.count >= 2,
-              let a1 = adapters.first, let a2 = adapters.dropFirst().first,
-              a1.isCANOpen && a2.isCANOpen else { return }
+        guard bothBidirAdaptersReady else { return }
+        guard let a1 = bidirAdapterA, let a2 = bidirAdapterB else { return }
         guard !anyTestRunning else { return }
 
         guard let c1 = a1.ioClient, let c2 = a2.ioClient else {
-            lastError = "Adapters not available for bidir test"
+            lastError = "Interfaces not available for bidir test"
             return
         }
 
@@ -548,8 +569,7 @@ class CANDashboardViewModel: ObservableObject {
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                guard self.adapters.count >= 2,
-                      let c1 = self.adapters[0].ioClient, let c2 = self.adapters[1].ioClient else { return }
+                guard let c1 = self.bidirAdapterA?.ioClient, let c2 = self.bidirAdapterB?.ioClient else { return }
                 let snap1 = self.bidirEngine.snapshotA1toA2()
                 self.bidirStats.a1toA2.messagesSent = Int(snap1.messagesSent)
                 self.bidirStats.a1toA2.messagesReceived = Int(snap1.messagesReceived)
