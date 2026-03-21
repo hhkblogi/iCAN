@@ -13,6 +13,13 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# App icon (Icon Composer format)
+filegroup(
+    name = "AppIcon",
+    srcs = glob(["AppIcon.icon/**"]),
+    visibility = ["//visibility:public"],
+)
+
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
 # C++ performance layer (MetricsEngine, TestEngines)
