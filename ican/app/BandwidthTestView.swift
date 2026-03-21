@@ -4,30 +4,36 @@ import Charts
 struct BandwidthTestView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
 
-    private var adapter1IsOpen: Bool { viewModel.adapters.count > 0 && viewModel.adapters[0].isCANOpen }
-    private var adapter2IsOpen: Bool { viewModel.adapters.count > 1 && viewModel.adapters[1].isCANOpen }
+    private var interfaceAIsOpen: Bool { viewModel.testAdapterA?.isCANOpen ?? false }
+    private var interfaceBIsOpen: Bool { viewModel.testAdapterB?.isCANOpen ?? false }
+    private var interfaceAName: String { viewModel.testAdapterA?.name ?? "—" }
+    private var interfaceBName: String { viewModel.testAdapterB?.name ?? "—" }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Connection Status Card
+                // Interface Selection + Status
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Adapter Status")
+                    Text("Interface Selection")
                         .font(.headline)
 
                     HStack(spacing: 20) {
-                        // Adapter 1 Status
+                        // Interface A
                         VStack(spacing: 8) {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                                 .font(.title)
-                                .foregroundColor(adapter1IsOpen ? .blue : .red)
-                            Text("Adapter 1 (A1)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(adapter1IsOpen ? "Ready" : "Closed")
+                                .foregroundColor(interfaceAIsOpen ? .blue : .red)
+                            Picker("Interface A", selection: $viewModel.testInterfaceAIndex) {
+                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                    Text(adapter.name).tag(idx)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .disabled(viewModel.anyTestRunning)
+                            Text(interfaceAIsOpen ? "Ready" : "Not Open")
                                 .font(.caption)
-                                .foregroundColor(adapter1IsOpen ? .green : .red)
-                            if adapter1IsOpen {
+                                .foregroundColor(interfaceAIsOpen ? .green : .red)
+                            if interfaceAIsOpen {
                                 Text(viewModel.testDirection == 0 ? "TX Node" : "RX Node")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -46,23 +52,27 @@ struct BandwidthTestView: View {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.right" : "arrow.left")
                                 .font(.title2)
                                 .foregroundColor(.secondary)
-                            Text(viewModel.testDirection == 0 ? "A1 → A2" : "A2 → A1")
+                            Text(viewModel.testDirection == 0 ? "A → B" : "B → A")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
 
-                        // Adapter 2 Status
+                        // Interface B
                         VStack(spacing: 8) {
                             Image(systemName: viewModel.testDirection == 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                                 .font(.title)
-                                .foregroundColor(adapter2IsOpen ? .purple : .red)
-                            Text("Adapter 2 (A2)")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(adapter2IsOpen ? "Ready" : "Closed")
+                                .foregroundColor(interfaceBIsOpen ? .purple : .red)
+                            Picker("Interface B", selection: $viewModel.testInterfaceBIndex) {
+                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                    Text(adapter.name).tag(idx)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .disabled(viewModel.anyTestRunning)
+                            Text(interfaceBIsOpen ? "Ready" : "Not Open")
                                 .font(.caption)
-                                .foregroundColor(adapter2IsOpen ? .green : .red)
-                            if adapter2IsOpen {
+                                .foregroundColor(interfaceBIsOpen ? .green : .red)
+                            if interfaceBIsOpen {
                                 Text(viewModel.testDirection == 0 ? "RX Node" : "TX Node")
                                     .font(.caption2)
                                     .padding(.horizontal, 8)
@@ -94,11 +104,11 @@ struct BandwidthTestView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Picker("Direction", selection: $viewModel.testDirection) {
-                                Text("A1 sends to A2").tag(0)
-                                Text("A2 sends to A1").tag(1)
+                                Text("A → B").tag(0)
+                                Text("B → A").tag(1)
                             }
                             .pickerStyle(.segmented)
-                            .disabled(viewModel.isBandwidthTestRunning)
+                            .disabled(viewModel.anyTestRunning)
                         }
 
                         VStack(alignment: .leading) {
@@ -110,7 +120,7 @@ struct BandwidthTestView: View {
                                 Text("64 bytes (FD)").tag(64)
                             }
                             .pickerStyle(.segmented)
-                            .disabled(viewModel.isBandwidthTestRunning)
+                            .disabled(viewModel.anyTestRunning)
                             .onChange(of: viewModel.testMessageSize) { _, newValue in
                                 if newValue > 8 { viewModel.testUseFD = true }
                             }
@@ -129,15 +139,33 @@ struct BandwidthTestView: View {
                                 Text("50").tag(50)
                             }
                             .pickerStyle(.menu)
-                            .disabled(viewModel.isBandwidthTestRunning)
+                            .disabled(viewModel.anyTestRunning)
                         }
                     }
 
-                    if !viewModel.bothTestAdaptersReady {
+                    if viewModel.adapters.count < 2 {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                            Text("Both adapters must be connected and CAN channels open to run tests.")
+                            Text("At least two CAN interfaces are required for this test.")
+                                .font(.subheadline)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.top, 8)
+                    } else if viewModel.testInterfaceAIndex == viewModel.testInterfaceBIndex {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text("Interface A and B must be different.")
+                                .font(.subheadline)
+                                .foregroundColor(.red)
+                        }
+                        .padding(.top, 8)
+                    } else if !viewModel.bothTestAdaptersReady {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Both interfaces must have CAN channels open.")
                                 .font(.subheadline)
                                 .foregroundColor(.orange)
                         }
@@ -184,7 +212,7 @@ struct BandwidthTestView: View {
                         .foregroundColor(.primary)
                         .cornerRadius(12)
                     }
-                    .disabled(viewModel.isBandwidthTestRunning)
+                    .disabled(viewModel.anyTestRunning)
                 }
                 .padding(.horizontal)
 
