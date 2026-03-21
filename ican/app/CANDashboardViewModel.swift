@@ -66,16 +66,9 @@ class CANDashboardViewModel: ObservableObject {
     @Published var bidirHistory: [BidirHistoryPoint] = []
     @Published var pcanDebugLog: String = ""
 
-    // Distributed Bidirectional Test Properties
-    @Published var isDistBidirTestRunning = false
-    @Published var distBidirStats = BandwidthTestStats()
-    @Published var distBidirHistory: [BandwidthHistoryPoint] = []
-    @Published var distBidirRole: Int = 0  // 0 = iPad 1 (TX:0x200, RX:0x201), 1 = iPad 2 (TX:0x201, RX:0x200)
-
     // C++ Test Engines (direct ring access, pthread + mach_wait_until)
     private var bandwidthEngine = BandwidthTestEngine()
     private var bidirEngine = BidirTestEngine()
-    private var distBidirEngine = DistBidirTestEngine()
 
     // C++ Dashboard Metrics Engines (one per adapter, background reader threads)
     private var dashEngines: [DashboardMetricsEngine] = []
@@ -83,12 +76,10 @@ class CANDashboardViewModel: ObservableObject {
     // Timers
     private var bandwidthStatsTimer: Timer?
     private var bidirStatsTimer: Timer?
-    private var distBidirStatsTimer: Timer?
     private var snapshotTimer: Timer?
 
     private var bidirLastSecond = Date()
     private var bandwidthLastSecond = Date()
-    private var distBidirLastSecond = Date()
     private var startTime = Date()
     private var lastRateTime = Date()
     private var cancellables = Set<AnyCancellable>()
@@ -459,14 +450,9 @@ class CANDashboardViewModel: ObservableObject {
         return adapters[0].isCANOpen && adapters[1].isCANOpen
     }
 
-    /// Whether the first adapter is CAN-open (for Test 3 which uses adapters[0]).
-    var firstAdapterReady: Bool {
-        adapters.first?.isCANOpen ?? false
-    }
-
     /// Whether any test is currently running.
     var anyTestRunning: Bool {
-        isBandwidthTestRunning || isBidirTestRunning || isDistBidirTestRunning
+        isBandwidthTestRunning || isBidirTestRunning
     }
 
     func startBandwidthTest() {
@@ -540,7 +526,7 @@ class CANDashboardViewModel: ObservableObject {
         guard adapters.count >= 2,
               let a1 = adapters.first, let a2 = adapters.dropFirst().first,
               a1.isCANOpen && a2.isCANOpen else { return }
-        guard !isBidirTestRunning && !isBandwidthTestRunning && !isDistBidirTestRunning else { return }
+        guard !anyTestRunning else { return }
 
         guard let c1 = a1.ioClient, let c2 = a2.ioClient else {
             lastError = "Adapters not available for bidir test"
@@ -660,79 +646,4 @@ class CANDashboardViewModel: ObservableObject {
         bidirHistory.removeAll()
     }
 
-    // MARK: - Distributed Bidirectional Test
-
-    func startDistBidirTest() {
-        guard let a1 = adapters.first, a1.isCANOpen else { return }
-        guard !isDistBidirTestRunning && !isBandwidthTestRunning && !isBidirTestRunning else { return }
-
-        guard let c1 = a1.ioClient else {
-            lastError = "Adapter not available for dist bidir test"
-            return
-        }
-
-        let txCanId: UInt32 = distBidirRole == 0 ? 0x200 : 0x201
-        let rxCanId: UInt32 = distBidirRole == 0 ? 0x201 : 0x200
-
-        os_log(.info, log: dashLog,
-               "startDistBidirTest: role=%d txId=0x%X rxId=0x%X",
-               distBidirRole, txCanId, rxCanId)
-
-        isDistBidirTestRunning = true
-        distBidirStats.reset()
-        distBidirStats.startTime = Date()
-        distBidirHistory.removeAll()
-        distBidirLastSecond = Date()
-
-        distBidirEngine = DistBidirTestEngine()
-        distBidirEngine.startTest(c1.canClient(), txCanId, rxCanId,
-                                  Int32(testMessageSize), testUseFD,
-                                  Int32(selectedBitrate.rawValue))
-
-        distBidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let snap = self.distBidirEngine.snapshot()
-                self.distBidirStats.messagesSent = Int(snap.messagesSent)
-                self.distBidirStats.messagesReceived = Int(snap.messagesReceived)
-                self.distBidirStats.bytesSent = Int(snap.bytesSent)
-                self.distBidirStats.bytesReceived = Int(snap.bytesReceived)
-                self.distBidirStats.rxPolls = Int(snap.rxPolls)
-                self.distBidirStats.rxHits = Int(snap.rxHits)
-                self.distBidirStats.rxRawBytes = Int(snap.rxRawBytes)
-                self.distBidirStats.rxSequenceGaps = Int(snap.rxSequenceGaps)
-                self.distBidirStats.rxOutOfOrder = Int(snap.rxOutOfOrder)
-                self.distBidirStats.rxDuplicates = Int(snap.rxDuplicates)
-                self.distBidirStats.rxDecodeFailures = Int(snap.rxDecodeFailures)
-                self.distBidirStats.duration = snap.duration
-
-                let now = Date()
-                let elapsed = now.timeIntervalSince(self.distBidirLastSecond)
-                if elapsed >= 1.0 {
-                    let perSec = self.distBidirEngine.drainPerSecondCounters()
-                    self.distBidirStats.instantTxRate = Double(perSec.tx) / elapsed
-                    self.distBidirStats.instantRxRate = Double(perSec.rx) / elapsed
-                    self.distBidirHistory.append(BandwidthHistoryPoint(
-                        timestamp: now,
-                        txRate: self.distBidirStats.instantTxRate,
-                        rxRate: self.distBidirStats.instantRxRate
-                    ))
-                    if self.distBidirHistory.count > 60 { self.distBidirHistory.removeFirst() }
-                    self.distBidirLastSecond = now
-                }
-            }
-        }
-    }
-
-    func stopDistBidirTest() {
-        distBidirEngine.stopTest()
-        distBidirStatsTimer?.invalidate()
-        distBidirStatsTimer = nil
-        isDistBidirTestRunning = false
-    }
-
-    func resetDistBidirStats() {
-        distBidirStats.reset()
-        distBidirHistory.removeAll()
-    }
 }

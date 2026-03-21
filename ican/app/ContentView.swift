@@ -24,8 +24,6 @@ struct ContentView: View {
                     BandwidthTestView(viewModel: viewModel)
                 case .bidir:
                     BidirTestView(viewModel: viewModel)
-                case .distBidir:
-                    DistBidirTestView(viewModel: viewModel)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

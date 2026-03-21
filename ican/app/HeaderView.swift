@@ -11,7 +11,6 @@ enum DashboardTab: String, CaseIterable {
     case messages = "Messages"
     case bandwidth = "Test 1"
     case bidir = "Test 2"
-    case distBidir = "Test 3"
 
     var icon: String {
         switch self {
@@ -20,7 +19,6 @@ enum DashboardTab: String, CaseIterable {
         case .messages: return "list.bullet.rectangle.portrait"
         case .bandwidth: return "speedometer"
         case .bidir: return "arrow.left.arrow.right"
-        case .distBidir: return "rectangle.on.rectangle"
         }
     }
 }
