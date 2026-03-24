@@ -10,175 +10,147 @@ struct BidirTestView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                // Test Description
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Bidirectional Test")
+                        .font(.headline)
+                    Text("Measures bidirectional throughput between two CAN interfaces. Both interfaces simultaneously transmit and receive frames on the shared CAN bus, testing concurrent TX/RX performance and delivery reliability under arbitration.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.platformBackground)
+                .cornerRadius(16)
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+                .padding(.horizontal)
+
                 // Interface Selection + Status
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Interface Selection")
+                    Text("Test Setup")
                         .font(.headline)
 
-                    HStack(spacing: 20) {
+                    HStack(spacing: 16) {
                         // Interface A
-                        VStack(spacing: 8) {
-                            Image(systemName: "arrow.up.arrow.down.circle.fill")
-                                .font(.title)
-                                .foregroundColor(interfaceAIsOpen ? .blue : .red)
-                            Picker("Interface A", selection: $viewModel.bidirInterfaceAIndex) {
-                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
-                                    Text(adapter.name).tag(idx)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text("Interface A")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "arrow.up.arrow.down.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(interfaceAIsOpen ? .blue : .secondary)
+                                Picker("", selection: $viewModel.bidirInterfaceAIndex) {
+                                    Text("— Select —").tag(-1)
+                                    ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                        if adapter.isCANOpen && idx != viewModel.bidirInterfaceBIndex {
+                                            Text(adapter.name).tag(idx)
+                                        }
+                                    }
                                 }
+                                .pickerStyle(.menu)
+                                .disabled(viewModel.anyTestRunning)
+                                Spacer()
                             }
-                            .pickerStyle(.menu)
-                            .disabled(viewModel.anyTestRunning)
-                            Text(interfaceAIsOpen ? "Ready" : "Not Open")
-                                .font(.caption)
-                                .foregroundColor(interfaceAIsOpen ? .green : .red)
-                            if interfaceAIsOpen {
-                                Text("TX: 0x200 / RX: 0x201")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(Color.blue.opacity(0.1))
-                                    .cornerRadius(4)
+                            if let adapterA = viewModel.bidirAdapterA, adapterA.isCANOpen {
+                                InterfaceConfigLabel(adapter: adapterA)
+                                RatePicker(
+                                    label: "TX Loop Rate (Hz)",
+                                    selection: $viewModel.bidirTargetRateA,
+                                    disabled: viewModel.anyTestRunning
+                                )
                             }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
-                        .padding()
                         .background(Color.platformSecondaryBackground)
-                        .cornerRadius(12)
+                        .cornerRadius(10)
 
                         // Bidirectional Arrows
-                        VStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "arrow.right")
-                                .font(.title2)
                                 .foregroundColor(.blue)
-                            Text("Full Duplex")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                             Image(systemName: "arrow.left")
-                                .font(.title2)
                                 .foregroundColor(.orange)
                         }
+                        .font(.subheadline)
 
                         // Interface B
-                        VStack(spacing: 8) {
-                            Image(systemName: "arrow.up.arrow.down.circle.fill")
-                                .font(.title)
-                                .foregroundColor(interfaceBIsOpen ? .orange : .red)
-                            Picker("Interface B", selection: $viewModel.bidirInterfaceBIndex) {
-                                ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
-                                    Text(adapter.name).tag(idx)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text("Interface B")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "arrow.up.arrow.down.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(interfaceBIsOpen ? .orange : .secondary)
+                                Picker("", selection: $viewModel.bidirInterfaceBIndex) {
+                                    Text("— Select —").tag(-1)
+                                    ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                        if adapter.isCANOpen && idx != viewModel.bidirInterfaceAIndex {
+                                            Text(adapter.name).tag(idx)
+                                        }
+                                    }
                                 }
+                                .pickerStyle(.menu)
+                                .disabled(viewModel.anyTestRunning)
+                                Spacer()
                             }
-                            .pickerStyle(.menu)
-                            .disabled(viewModel.anyTestRunning)
-                            Text(interfaceBIsOpen ? "Ready" : "Not Open")
-                                .font(.caption)
-                                .foregroundColor(interfaceBIsOpen ? .green : .red)
-                            if interfaceBIsOpen {
-                                Text("TX: 0x201 / RX: 0x200")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(Color.orange.opacity(0.1))
-                                    .cornerRadius(4)
+                            if let adapterB = viewModel.bidirAdapterB, adapterB.isCANOpen {
+                                InterfaceConfigLabel(adapter: adapterB)
+                                RatePicker(
+                                    label: "TX Loop Rate (Hz)",
+                                    selection: $viewModel.bidirTargetRateB,
+                                    disabled: viewModel.anyTestRunning
+                                )
                             }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                         .frame(maxWidth: .infinity)
-                        .padding()
                         .background(Color.platformSecondaryBackground)
-                        .cornerRadius(12)
+                        .cornerRadius(10)
                     }
 
-                }
-                .padding()
-                .background(Color.platformBackground)
-                .cornerRadius(16)
-                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
-                .padding(.horizontal)
-
-                // Test Configuration
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Test Configuration")
-                        .font(.headline)
-
-                    Toggle("Use CAN FD", isOn: $viewModel.testUseFD)
-                        .disabled(viewModel.isBidirTestRunning)
-
-                    HStack(spacing: 20) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Message Size")
-                            if viewModel.testUseFD {
-                                Picker("Size", selection: $viewModel.testMessageSize) {
-                                    Text("8").tag(8)
-                                    Text("16").tag(16)
-                                    Text("32").tag(32)
-                                    Text("64").tag(64)
-                                }
-                                .pickerStyle(.segmented)
-                                .frame(width: 250)
-                            } else {
-                                Picker("Size", selection: $viewModel.testMessageSize) {
-                                    Text("1").tag(1)
-                                    Text("4").tag(4)
-                                    Text("8").tag(8)
-                                }
-                                .pickerStyle(.segmented)
-                                .frame(width: 250)
-                            }
-                        }
-                        .disabled(viewModel.isBidirTestRunning)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Target Rate (msg/s)")
-                            Picker("Rate", selection: $viewModel.testTargetRate) {
-                                Text("1").tag(1)
-                                Text("10").tag(10)
-                                Text("100").tag(100)
-                                Text("1K").tag(1000)
-                                Text("2K").tag(2000)
-                                Text("3K").tag(3000)
-                                Text("4K").tag(4000)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 400)
-                        }
-                        .disabled(viewModel.isBidirTestRunning)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Burst Size")
-                            Picker("Burst", selection: $viewModel.testBurstSize) {
-                                Text("1").tag(1)
-                                Text("2").tag(2)
-                                Text("4").tag(4)
-                                Text("6").tag(6)
-                                Text("10").tag(10)
-                                Text("50").tag(50)
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 200)
-                        }
-                        .disabled(viewModel.isBidirTestRunning)
-
-                        Spacer()
-                        Text(viewModel.testUseFD ? "CAN FD" : "Classic CAN")
-                            .foregroundColor(viewModel.testUseFD ? .blue : .secondary)
-                    }
-
-                    HStack {
-                        Text("CAN IDs")
-                        Spacer()
-                        HStack(spacing: 12) {
+                    // CAN ID assignments — aligned with interface blocks
+                    if interfaceAIsOpen && interfaceBIsOpen {
+                        let nameA = viewModel.bidirAdapterA?.name ?? "A"
+                        let nameB = viewModel.bidirAdapterB?.name ?? "B"
+                        HStack(spacing: 16) {
+                            // A → B info, aligned with Interface A block
                             HStack(spacing: 4) {
-                                Circle().fill(.blue).frame(width: 8, height: 8)
-                                Text("A1: 0x200")
-                                    .font(.system(.body, design: .monospaced))
+                                Text("\(nameA) → \(nameB)")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.blue)
+                                Text("TX CAN ID: 0x200")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
                             }
+                            .frame(maxWidth: .infinity)
+
+                            // Spacer matching the arrows column
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.right").opacity(0)
+                                Image(systemName: "arrow.left").opacity(0)
+                            }
+                            .font(.subheadline)
+
+                            // B → A info, aligned with Interface B block
                             HStack(spacing: 4) {
-                                Circle().fill(.orange).frame(width: 8, height: 8)
-                                Text("A2: 0x201")
-                                    .font(.system(.body, design: .monospaced))
+                                Text("\(nameB) → \(nameA)")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.orange)
+                                Text("TX CAN ID: 0x201")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
                             }
+                            .frame(maxWidth: .infinity)
                         }
-                        .foregroundColor(.secondary)
                     }
                 }
                 .padding()
@@ -187,45 +159,34 @@ struct BidirTestView: View {
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                 .padding(.horizontal)
 
-                // Control Buttons
-                HStack(spacing: 16) {
-                    if !viewModel.isBidirTestRunning {
-                        Button {
-                            viewModel.startBidirTest()
-                        } label: {
-                            Label("Start Bidirectional Stress Test", systemImage: "play.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .disabled(!viewModel.bothBidirAdaptersReady || viewModel.anyTestRunning)
-                    } else {
-                        Button {
-                            viewModel.stopBidirTest()
-                        } label: {
-                            Label("Stop Test", systemImage: "stop.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                    }
 
+                // Control Button
+                if !viewModel.isBidirTestRunning {
                     Button {
-                        viewModel.resetBidirStats()
+                        viewModel.startBidirTest()
                     } label: {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
+                        Label("Start", systemImage: "play.fill")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding()
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(viewModel.isBidirTestRunning)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(!viewModel.bothBidirAdaptersReady || viewModel.anyTestRunning)
+                    .padding(.horizontal)
+                } else {
+                    Button {
+                        viewModel.stopBidirTest()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
 
                 if viewModel.adapters.count < 2 {
                     HStack {

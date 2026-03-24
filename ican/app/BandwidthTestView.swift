@@ -12,6 +12,21 @@ struct BandwidthTestView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                // Test Description
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Bandwidth Test")
+                        .font(.headline)
+                    Text("Measures unidirectional throughput between two CAN interfaces. One interface transmits a continuous stream of frames while the other receives and validates delivery using sequence numbers.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.platformBackground)
+                .cornerRadius(16)
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+                .padding(.horizontal)
+
                 // Interface Selection + Status
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Interface Selection")
@@ -411,3 +426,4 @@ struct StatRow: View {
         }
     }
 }
+

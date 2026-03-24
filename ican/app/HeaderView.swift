@@ -9,8 +9,8 @@ enum DashboardTab: String, CaseIterable {
     case ports = "Interfaces"
     case dashboard = "Dashboard"
     case messages = "Messages"
-    case bandwidth = "Test 1"
-    case bidir = "Test 2"
+    case bandwidth = "Bandwidth"
+    case bidir = "Bidirectional"
 
     var icon: String {
         switch self {
@@ -21,6 +21,16 @@ enum DashboardTab: String, CaseIterable {
         case .bidir: return "arrow.left.arrow.right"
         }
     }
+
+    var isTest: Bool {
+        self == .bandwidth || self == .bidir
+    }
+
+    /// Tabs shown as top-level buttons
+    static var mainTabs: [DashboardTab] { [.ports, .dashboard, .messages] }
+
+    /// Test sub-tabs
+    static var testTabs: [DashboardTab] { [.bandwidth, .bidir] }
 }
 
 // Bus Selection
@@ -33,12 +43,14 @@ enum BusSelection: String, CaseIterable {
 struct HeaderView: View {
     @Binding var selectedTab: DashboardTab
     @ObservedObject var viewModel: CANDashboardViewModel
+    @State private var lastTestTab: DashboardTab = .bandwidth
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab Bar
+            // Main Tab Bar
             HStack(spacing: 4) {
-                ForEach(DashboardTab.allCases, id: \.self) { tab in
+                // Main tabs
+                ForEach(DashboardTab.mainTabs, id: \.self) { tab in
                     Button {
                         selectedTab = tab
                     } label: {
@@ -56,6 +68,25 @@ struct HeaderView: View {
                     .buttonStyle(.plain)
                 }
 
+                // Tests tab
+                Button {
+                    if !selectedTab.isTest {
+                        selectedTab = lastTestTab
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "flask")
+                        Text("Tests")
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .foregroundColor(selectedTab.isTest ? .white : .secondary)
+                    .background(selectedTab.isTest ? Color.blue : Color.clear)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
 
                 // Compact connection status
@@ -63,20 +94,44 @@ struct HeaderView: View {
                     Circle()
                         .fill(viewModel.connectionStatusColor)
                         .frame(width: 8, height: 8)
+                    Text("Connected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     Text(viewModel.connectionStatusText)
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    if viewModel.isCANOpen {
-                        Text("CAN Open")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    }
+                        .monospacedDigit()
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+
+            // Test sub-tabs (shown when a test is selected)
+            if selectedTab.isTest {
+                HStack(spacing: 4) {
+                    ForEach(DashboardTab.testTabs, id: \.self) { tab in
+                        Button {
+                            selectedTab = tab
+                            lastTestTab = tab
+                        } label: {
+                            Text(tab.rawValue)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 14)
+                            .foregroundColor(selectedTab == tab ? .white : .secondary)
+                            .background(selectedTab == tab ? Color.indigo : Color.clear)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 6)
+            }
 
             Divider()
         }

@@ -50,9 +50,11 @@ class CANDashboardViewModel: ObservableObject {
     // Test 1 (Bandwidth)
     @Published var testInterfaceAIndex: Int = 0
     @Published var testInterfaceBIndex: Int = 1
-    // Test 2 (Bidirectional)
-    @Published var bidirInterfaceAIndex: Int = 0
-    @Published var bidirInterfaceBIndex: Int = 1
+    // Test 2 (Bidirectional) — -1 means "not selected"
+    @Published var bidirInterfaceAIndex: Int = -1
+    @Published var bidirInterfaceBIndex: Int = -1
+    @Published var bidirTargetRateA: Int = 4000
+    @Published var bidirTargetRateB: Int = 4000
 
     // Bandwidth Test Properties
     @Published var isBandwidthTestRunning = false
@@ -102,11 +104,12 @@ class CANDashboardViewModel: ObservableObject {
     }
 
     var connectionStatusText: String {
-        let connectedCount = adapters.filter { $0.isConnected }.count
-        if connectedCount == 0 {
-            return "Disconnected"
+        let openCount = adapters.filter { $0.isCANOpen }.count
+        let totalCount = adapters.count
+        if totalCount == 0 {
+            return "No Interfaces"
         }
-        return "\(connectedCount) Connected"
+        return "\(openCount) / \(totalCount)"
     }
 
     init() {
@@ -191,7 +194,7 @@ class CANDashboardViewModel: ObservableObject {
         // Rebuild dash engines: reuse existing engines for preserved adapters
         // that have an active CAN channel, create new ones otherwise.
         var newEngines: [DashboardMetricsEngine] = []
-        for (i, newAdapter) in newAdapters.enumerated() {
+        for newAdapter in newAdapters {
             if let oldIdx = adapters.firstIndex(where: { $0 === newAdapter }),
                oldIdx < dashEngines.count,
                newAdapter.isCANOpen {
@@ -218,19 +221,19 @@ class CANDashboardViewModel: ObservableObject {
             let maxIdx = adapters.count - 1
             testInterfaceAIndex = min(testInterfaceAIndex, maxIdx)
             testInterfaceBIndex = min(testInterfaceBIndex, maxIdx)
-            bidirInterfaceAIndex = min(bidirInterfaceAIndex, maxIdx)
-            bidirInterfaceBIndex = min(bidirInterfaceBIndex, maxIdx)
+            if bidirInterfaceAIndex >= 0 { bidirInterfaceAIndex = min(bidirInterfaceAIndex, maxIdx) }
+            if bidirInterfaceBIndex >= 0 { bidirInterfaceBIndex = min(bidirInterfaceBIndex, maxIdx) }
             if testInterfaceAIndex == testInterfaceBIndex && adapters.count > 1 {
                 testInterfaceBIndex = testInterfaceAIndex == 0 ? 1 : 0
             }
-            if bidirInterfaceAIndex == bidirInterfaceBIndex && adapters.count > 1 {
+            if bidirInterfaceAIndex >= 0 && bidirInterfaceAIndex == bidirInterfaceBIndex && adapters.count > 1 {
                 bidirInterfaceBIndex = bidirInterfaceAIndex == 0 ? 1 : 0
             }
         } else {
             testInterfaceAIndex = 0
             testInterfaceBIndex = 0
-            bidirInterfaceAIndex = 0
-            bidirInterfaceBIndex = 0
+            bidirInterfaceAIndex = -1
+            bidirInterfaceBIndex = -1
         }
     }
 
@@ -564,7 +567,7 @@ class CANDashboardViewModel: ObservableObject {
         bidirEngine.startTest(c1.canClient(), c2.canClient(),
                               Int32(testMessageSize), Int32(testBurstSize),
                               testUseFD, Int32(selectedBitrate.rawValue),
-                              Int32(testTargetRate))
+                              Int32(bidirTargetRateA), Int32(bidirTargetRateB))
 
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
