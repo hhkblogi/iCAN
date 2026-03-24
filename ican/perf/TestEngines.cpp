@@ -195,7 +195,8 @@ public:
     int burstSize{1};
     bool useFD{false};
     int bitrate{1000000};
-    int targetRate{4000};   // target msg/s per direction
+    int targetRateA{4000};  // target msg/s for A→B direction
+    int targetRateB{4000};  // target msg/s for B→A direction
 };
 
 struct BidirThreadArgs {
@@ -216,7 +217,8 @@ static void* bidirTxThread(void* arg) {
     uint64_t counter = 0;
 
     // Configurable TX rate per direction
-    uint32_t frameTimeUs = (impl->targetRate > 0) ? (1000000 / impl->targetRate) : 250;
+    int rate = isA1 ? impl->targetRateA : impl->targetRateB;
+    uint32_t frameTimeUs = (rate > 0) ? (1000000 / rate) : 250;
     uint32_t burstTimeUs = impl->burstSize * frameTimeUs;
 
     // Drift-free absolute-time pacing
@@ -291,7 +293,8 @@ BidirTestEngine& BidirTestEngine::operator=(const BidirTestEngine&) = default;
 
 void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
                                  int messageSize, int burstSize,
-                                 bool useFD, int bitrate, int targetRate) {
+                                 bool useFD, int bitrate,
+                                 int targetRateA, int targetRateB) {
     _impl->engineA1toA2.reset();
     _impl->engineA2toA1.reset();
     _impl->cancelled = false;
@@ -301,7 +304,8 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
     _impl->burstSize = burstSize;
     _impl->useFD = useFD;
     _impl->bitrate = bitrate;
-    _impl->targetRate = (targetRate > 0) ? targetRate : 4000;
+    _impl->targetRateA = (targetRateA > 0) ? targetRateA : 4000;
+    _impl->targetRateB = (targetRateB > 0) ? targetRateB : 4000;
 
     // Allocate args on heap — thread functions delete them
     auto* a1TxArgs = new BidirThreadArgs{_impl.get(), true};

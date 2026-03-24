@@ -149,3 +149,69 @@ struct ConnectionBanner: View {
         .padding(.horizontal)
     }
 }
+
+// MARK: - Rate Picker (horizontal scrolling chip selector)
+
+struct RatePicker: View {
+    let label: String
+    @Binding var selection: Int
+    var disabled: Bool = false
+
+    private let rates = [1, 10, 100, 1000, 2000, 3000, 4000]
+
+    private func formatRate(_ rate: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.usesGroupingSeparator = false
+        return formatter.string(from: NSNumber(value: rate)) ?? "\(rate)"
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize()
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(rates, id: \.self) { rate in
+                        Button {
+                            selection = rate
+                        } label: {
+                            Text(formatRate(rate))
+                                .font(.caption)
+                                .fontWeight(selection == rate ? .bold : .regular)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .foregroundColor(selection == rate ? .white : .primary)
+                                .background(selection == rate ? Color.blue : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(selection == rate ? Color.clear : Color.secondary.opacity(0.3), lineWidth: 1)
+                                )
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(disabled)
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+// MARK: - Interface Config Label (shows read-only config for a selected interface)
+
+struct InterfaceConfigLabel: View {
+    @ObservedObject var adapter: SerialAdapter
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(adapter.selectedBitrate.description)
+            Text(adapter.canFDEnabled ? "CAN FD" : "CAN 2.0")
+        }
+        .font(.caption2)
+        .foregroundColor(.secondary)
+    }
+}

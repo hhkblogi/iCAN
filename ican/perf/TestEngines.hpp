@@ -36,7 +36,7 @@ public:
 
     void startTest(CANClient a1Client, CANClient a2Client,
                    int messageSize, int burstSize, bool useFD, int bitrate,
-                   int targetRate = 4000);
+                   int targetRateA = 4000, int targetRateB = 4000);
     void stopTest();
     BandwidthSnapshot snapshotA1toA2();
     BandwidthSnapshot snapshotA2toA1();
