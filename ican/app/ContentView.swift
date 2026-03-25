@@ -20,8 +20,6 @@ struct ContentView: View {
                     DashboardView(viewModel: viewModel)
                 case .messages:
                     MessageLogView(viewModel: viewModel)
-                case .bandwidth:
-                    BandwidthTestView(viewModel: viewModel)
                 case .bidir:
                     BidirTestView(viewModel: viewModel)
                 }

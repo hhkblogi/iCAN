@@ -47,24 +47,11 @@ class CANDashboardViewModel: ObservableObject {
     @Published var lastError: String?
 
     // Test Interface Selection (user picks which interfaces to use)
-    // Test 1 (Bandwidth)
-    @Published var testInterfaceAIndex: Int = 0
-    @Published var testInterfaceBIndex: Int = 1
-    // Test 2 (Bidirectional) — -1 means "not selected"
+    // Bidirectional test — -1 means "not selected"
     @Published var bidirInterfaceAIndex: Int = -1
     @Published var bidirInterfaceBIndex: Int = -1
     @Published var bidirTargetRateA: Int = 4000
     @Published var bidirTargetRateB: Int = 4000
-
-    // Bandwidth Test Properties
-    @Published var isBandwidthTestRunning = false
-    @Published var bandwidthStats = BandwidthTestStats()
-    @Published var bandwidthHistory: [BandwidthHistoryPoint] = []
-    @Published var testMessageSize: Int = 8
-    @Published var testUseFD = false
-    @Published var testBurstSize: Int = 1
-    @Published var testTargetRate: Int = 4000  // msg/s per direction
-    @Published var testDirection: Int = 0  // 0 = A→B, 1 = B→A
 
     // Bidirectional Test Properties
     @Published var isBidirTestRunning = false
@@ -72,20 +59,17 @@ class CANDashboardViewModel: ObservableObject {
     @Published var bidirHistory: [BidirHistoryPoint] = []
     @Published var pcanDebugLog: String = ""
 
-    // C++ Test Engines (direct ring access, pthread + mach_wait_until)
-    private var bandwidthEngine = BandwidthTestEngine()
+    // C++ Test Engine (direct ring access, pthread + mach_wait_until)
     private var bidirEngine = BidirTestEngine()
 
     // C++ Dashboard Metrics Engines (one per adapter, background reader threads)
     private var dashEngines: [DashboardMetricsEngine] = []
 
     // Timers
-    private var bandwidthStatsTimer: Timer?
     private var bidirStatsTimer: Timer?
     private var snapshotTimer: Timer?
 
     private var bidirLastSecond = Date()
-    private var bandwidthLastSecond = Date()
     private var startTime = Date()
     private var lastRateTime = Date()
     private var cancellables = Set<AnyCancellable>()
@@ -219,19 +203,12 @@ class CANDashboardViewModel: ObservableObject {
         // Clamp test interface indices to valid range
         if adapters.count > 0 {
             let maxIdx = adapters.count - 1
-            testInterfaceAIndex = min(testInterfaceAIndex, maxIdx)
-            testInterfaceBIndex = min(testInterfaceBIndex, maxIdx)
             if bidirInterfaceAIndex >= 0 { bidirInterfaceAIndex = min(bidirInterfaceAIndex, maxIdx) }
             if bidirInterfaceBIndex >= 0 { bidirInterfaceBIndex = min(bidirInterfaceBIndex, maxIdx) }
-            if testInterfaceAIndex == testInterfaceBIndex && adapters.count > 1 {
-                testInterfaceBIndex = testInterfaceAIndex == 0 ? 1 : 0
-            }
             if bidirInterfaceAIndex >= 0 && bidirInterfaceAIndex == bidirInterfaceBIndex && adapters.count > 1 {
                 bidirInterfaceBIndex = bidirInterfaceAIndex == 0 ? 1 : 0
             }
         } else {
-            testInterfaceAIndex = 0
-            testInterfaceBIndex = 0
             bidirInterfaceAIndex = -1
             bidirInterfaceBIndex = -1
         }
@@ -443,23 +420,7 @@ class CANDashboardViewModel: ObservableObject {
 
     // MARK: - Tests
 
-    /// Selected test interfaces (user-configurable via Interface A/B pickers).
-    var testAdapterA: SerialAdapter? {
-        guard testInterfaceAIndex >= 0 && testInterfaceAIndex < adapters.count else { return nil }
-        return adapters[testInterfaceAIndex]
-    }
-    var testAdapterB: SerialAdapter? {
-        guard testInterfaceBIndex >= 0 && testInterfaceBIndex < adapters.count else { return nil }
-        return adapters[testInterfaceBIndex]
-    }
-
-    /// Whether both selected Test 1 interfaces are CAN-open and different.
-    var bothTestAdaptersReady: Bool {
-        guard let a = testAdapterA, let b = testAdapterB else { return false }
-        return a.isCANOpen && b.isCANOpen && testInterfaceAIndex != testInterfaceBIndex
-    }
-
-    /// Selected Test 2 interfaces (user-configurable via Interface A/B pickers).
+    /// Selected bidirectional test interfaces (user-configurable via Interface A/B pickers).
     var bidirAdapterA: SerialAdapter? {
         guard bidirInterfaceAIndex >= 0 && bidirInterfaceAIndex < adapters.count else { return nil }
         return adapters[bidirInterfaceAIndex]
@@ -469,7 +430,7 @@ class CANDashboardViewModel: ObservableObject {
         return adapters[bidirInterfaceBIndex]
     }
 
-    /// Whether both selected Test 2 interfaces are CAN-open and different.
+    /// Whether both selected bidirectional test interfaces are CAN-open and different.
     var bothBidirAdaptersReady: Bool {
         guard let a = bidirAdapterA, let b = bidirAdapterB else { return false }
         return a.isCANOpen && b.isCANOpen && bidirInterfaceAIndex != bidirInterfaceBIndex
@@ -477,74 +438,7 @@ class CANDashboardViewModel: ObservableObject {
 
     /// Whether any test is currently running.
     var anyTestRunning: Bool {
-        isBandwidthTestRunning || isBidirTestRunning
-    }
-
-    func startBandwidthTest() {
-        guard bothTestAdaptersReady else { return }
-        guard let a1 = testAdapterA, let a2 = testAdapterB else { return }
-        guard !anyTestRunning else { return }
-
-        let txAdapter = testDirection == 0 ? a1.ioClient : a2.ioClient
-        let rxAdapter = testDirection == 0 ? a2.ioClient : a1.ioClient
-
-        guard let txC = txAdapter, let rxC = rxAdapter else {
-            lastError = "Adapters not available for bandwidth test"
-            return
-        }
-
-        isBandwidthTestRunning = true
-        bandwidthStats.reset()
-        bandwidthStats.startTime = Date()
-        bandwidthHistory.removeAll()
-        bandwidthLastSecond = Date()
-
-        bandwidthEngine = BandwidthTestEngine()
-        bandwidthEngine.startTest(txC.canClient(), rxC.canClient(),
-                                  0x100, Int32(testMessageSize), Int32(testBurstSize),
-                                  testUseFD, Int32(selectedBitrate.rawValue))
-
-        bandwidthStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let snap = self.bandwidthEngine.snapshot()
-                self.bandwidthStats.messagesSent = Int(snap.messagesSent)
-                self.bandwidthStats.bytesSent = Int(snap.bytesSent)
-                self.bandwidthStats.messagesReceived = Int(snap.messagesReceived)
-                self.bandwidthStats.bytesReceived = Int(snap.bytesReceived)
-
-                self.bandwidthStats.rxPolls = Int(snap.rxPolls)
-                self.bandwidthStats.rxHits = Int(snap.rxHits)
-                self.bandwidthStats.rxSequenceGaps = Int(snap.rxSequenceGaps)
-                self.bandwidthStats.rxOutOfOrder = Int(snap.rxOutOfOrder)
-                self.bandwidthStats.rxDuplicates = Int(snap.rxDuplicates)
-                self.bandwidthStats.rxDecodeFailures = Int(snap.rxDecodeFailures)
-                self.bandwidthStats.duration = snap.duration
-
-                let now = Date()
-                let elapsed = now.timeIntervalSince(self.bandwidthLastSecond)
-                if elapsed >= 1.0 {
-                    let perSec = self.bandwidthEngine.drainPerSecondCounters()
-                    self.bandwidthStats.instantTxRate = Double(perSec.tx) / elapsed
-                    self.bandwidthStats.instantRxRate = Double(perSec.rx) / elapsed
-                    self.bandwidthHistory.append(BandwidthHistoryPoint(timestamp: now, txRate: self.bandwidthStats.instantTxRate, rxRate: self.bandwidthStats.instantRxRate))
-                    if self.bandwidthHistory.count > 60 { self.bandwidthHistory.removeFirst() }
-                    self.bandwidthLastSecond = now
-                }
-            }
-        }
-    }
-
-    func stopBandwidthTest() {
-        bandwidthEngine.stopTest()
-        bandwidthStatsTimer?.invalidate()
-        bandwidthStatsTimer = nil
-        isBandwidthTestRunning = false
-    }
-
-    func resetBandwidthStats() {
-        bandwidthStats.reset()
-        bandwidthHistory.removeAll()
+        isBidirTestRunning
     }
 
     func startBidirTest() {
@@ -565,8 +459,8 @@ class CANDashboardViewModel: ObservableObject {
 
         bidirEngine = BidirTestEngine()
         bidirEngine.startTest(c1.canClient(), c2.canClient(),
-                              Int32(testMessageSize), Int32(testBurstSize),
-                              testUseFD, Int32(selectedBitrate.rawValue),
+                              8, 1,
+                              false, Int32(selectedBitrate.rawValue),
                               Int32(bidirTargetRateA), Int32(bidirTargetRateB))
 
         bidirStatsTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
