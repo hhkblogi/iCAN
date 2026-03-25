@@ -9,7 +9,6 @@ enum DashboardTab: String, CaseIterable {
     case ports = "Interfaces"
     case dashboard = "Dashboard"
     case messages = "Messages"
-    case bandwidth = "Bandwidth"
     case bidir = "Bidirectional"
 
     var icon: String {
@@ -17,20 +16,19 @@ enum DashboardTab: String, CaseIterable {
         case .ports: return "cable.connector"
         case .dashboard: return "gauge.with.dots.needle.bottom.100percent"
         case .messages: return "list.bullet.rectangle.portrait"
-        case .bandwidth: return "speedometer"
         case .bidir: return "arrow.left.arrow.right"
         }
     }
 
     var isTest: Bool {
-        self == .bandwidth || self == .bidir
+        self == .bidir
     }
 
     /// Tabs shown as top-level buttons
     static var mainTabs: [DashboardTab] { [.ports, .dashboard, .messages] }
 
     /// Test sub-tabs
-    static var testTabs: [DashboardTab] { [.bandwidth, .bidir] }
+    static var testTabs: [DashboardTab] { [.bidir] }
 }
 
 // Bus Selection
@@ -43,7 +41,7 @@ enum BusSelection: String, CaseIterable {
 struct HeaderView: View {
     @Binding var selectedTab: DashboardTab
     @ObservedObject var viewModel: CANDashboardViewModel
-    @State private var lastTestTab: DashboardTab = .bandwidth
+    @State private var lastTestTab: DashboardTab = .bidir
 
     var body: some View {
         VStack(spacing: 0) {
