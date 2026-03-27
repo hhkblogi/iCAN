@@ -32,6 +32,7 @@ class CANDashboardViewModel: ObservableObject {
     @Published var metrics = CANDashboardMetrics()
     @Published var busStatuses: [BusStatus] = []
     @Published var messages: [CANLogMessage] = []
+    @Published var messageInterfaceFilter: String = "All"
     @Published var errorCount: Int = 0
     @Published var messageDistribution: [MessageDistPoint] = []
     @Published var idDistribution: [CANIdDistribution] = []
@@ -211,6 +212,12 @@ class CANDashboardViewModel: ObservableObject {
         } else {
             bidirInterfaceAIndex = -1
             bidirInterfaceBIndex = -1
+        }
+
+        // Reset message filter if selected interface no longer exists
+        if messageInterfaceFilter != "All" &&
+           !adapters.contains(where: { $0.name == messageInterfaceFilter }) {
+            messageInterfaceFilter = "All"
         }
     }
 
