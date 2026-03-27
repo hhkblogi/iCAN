@@ -11,10 +11,14 @@ struct CANLogMessage: Identifiable {
     let type: String
     let direction: String
     
+    private static let timestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSSS"
+        return f
+    }()
+
     var timestampString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SS"
-        return formatter.string(from: timestamp)
+        Self.timestampFormatter.string(from: timestamp)
     }
 }
 
