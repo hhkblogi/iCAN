@@ -394,8 +394,10 @@ class CANDashboardViewModel: ObservableObject {
         let dataHex = withUnsafeBytes(of: rf.data) { buf in
             (0..<Int(rf.len)).map { String(format: "%02X", buf[$0]) }.joined(separator: " ")
         }
+        // Convert driver-captured Unix microsecond timestamp to Date
+        let timestamp = Date(timeIntervalSince1970: Double(rf.timestamp_us) / 1_000_000.0)
         return CANLogMessage(
-            timestamp: Date().addingTimeInterval(rf.timestampOffset - snapDuration),
+            timestamp: timestamp,
             bus: adapter,
             canId: hexId,
             dlc: Int(rf.len),

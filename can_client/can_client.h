@@ -73,18 +73,18 @@ public:
     // Returns 1 on success, 0 on failure.
     int write(const struct canfd_frame* frame);
 
-    // Read one CAN FD frame (non-blocking).
-    // Returns 1 on success (frame filled), 0 if no data.
-    int read(struct canfd_frame* frame);
+    // Read one CAN packet with timestamp (non-blocking).
+    // Returns 1 on success (packet filled), 0 if no data.
+    int read(struct CANPacket* packet);
 
-    // Read up to max_frames (non-blocking batch).
-    // Returns number of frames read (0 if empty).
-    int readMany(struct canfd_frame* frames, int max_frames);
+    // Read up to max_packets with timestamps (non-blocking batch).
+    // Returns number of packets read (0 if empty).
+    int readMany(struct CANPacket* packets, int max_packets);
 
-    // Read up to max_frames, blocking up to timeoutMs if none available.
+    // Read up to max_packets with timestamps, blocking up to timeoutMs if none available.
     // Uses async completion (WaitForData) to sleep efficiently.
-    // Returns number of frames read (0 if timeout with no data).
-    int readManyBlocking(struct canfd_frame* frames, int max_frames, uint32_t timeoutMs);
+    // Returns number of packets read (0 if timeout with no data).
+    int readManyBlocking(struct CANPacket* packets, int max_packets, uint32_t timeoutMs);
 
     // --- Raw serial I/O (for SLCAN control commands) ---
 

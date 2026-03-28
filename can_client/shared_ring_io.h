@@ -12,12 +12,14 @@
 namespace shared_ring {
 
 /// Write a canfd_frame into the RX ring (driver produces, app consumes).
+/// V5 entry format: [uint16_t frameSize][uint64_t timestamp_us][frame bytes]
+/// frameSize = CAN frame size only (16 or 72); total entry = 2 + 8 + frameSize.
 /// Returns true if written, false if ring was full.
 /// Atomically updates rxProduceCount or rxDropped in the header.
 inline bool writeRxFrame(SharedRingHeader* hdr, uint8_t* rxData,
-                         const canfd_frame& frame) {
+                         const canfd_frame& frame, uint64_t timestamp_us) {
     uint16_t frameSize = static_cast<uint16_t>(sizeof(canfd_frame));
-    uint32_t entrySize = 2 + frameSize;
+    uint32_t entrySize = 2 + 8 + frameSize;  // header + timestamp + frame
     auto* rxCtrl = &hdr->rx;
     uint32_t cap = hdr->rxCapacity;
     uint32_t head = ring_load_head_relaxed(rxCtrl);
@@ -28,11 +30,18 @@ inline bool writeRxFrame(SharedRingHeader* hdr, uint8_t* rxData,
         __atomic_fetch_add(&hdr->rxDropped, 1, __ATOMIC_RELAXED);
         return false;
     }
+    // Write frame size header (2 bytes, little-endian)
     rxData[head % cap] = static_cast<uint8_t>(frameSize & 0xFF);
     rxData[(head + 1) % cap] = static_cast<uint8_t>(frameSize >> 8);
+    // Write timestamp (8 bytes, little-endian)
+    auto* tsBytes = reinterpret_cast<const uint8_t*>(&timestamp_us);
+    for (uint32_t i = 0; i < 8; i++) {
+        rxData[(head + 2 + i) % cap] = tsBytes[i];
+    }
+    // Write frame bytes
     auto* frameBytes = reinterpret_cast<const uint8_t*>(&frame);
     for (uint32_t i = 0; i < frameSize; i++) {
-        rxData[(head + 2 + i) % cap] = frameBytes[i];
+        rxData[(head + 10 + i) % cap] = frameBytes[i];
     }
     ring_store_head_release(rxCtrl, head + entrySize);
     __atomic_fetch_add(&hdr->rxProduceCount, 1, __ATOMIC_RELAXED);

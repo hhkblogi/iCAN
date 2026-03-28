@@ -31,6 +31,7 @@
 #include <string.h>
 #include <atomic>
 #include <variant>
+#include <time.h>
 
 // Types, constants, and macros imported from driver_types.h via codec headers
 
@@ -1095,7 +1096,8 @@ void USBCANDriver::ReadCompleteBundled_Impl(
                 const uint8_t* src = (const uint8_t*)addr;
                 std::visit([&](auto& codec) {
                     codec.processRxData(src, byteCount, [&](const canfd_frame& frame) {
-                        if (shared_ring::writeRxFrame(ivars->fRingHeader, ivars->fRingHeader->data, frame)) {
+                        uint64_t rxTimestamp = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+                        if (shared_ring::writeRxFrame(ivars->fRingHeader, ivars->fRingHeader->data, frame, rxTimestamp)) {
                             didWriteFrame = true;
                         }
                     }, ivars->fRingHeader);

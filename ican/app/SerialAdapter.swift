@@ -177,7 +177,7 @@ class SerialAdapter: ObservableObject {
         return client?.send(slcanString) ?? 0
     }
 
-    func receiveFrames() -> [canfd_frame] {
+    func receiveFrames() -> [CANPacket] {
         return client?.ReceiveFrames(maxFrames: 64) ?? []
     }
 }

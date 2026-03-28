@@ -20,7 +20,7 @@ struct RecentFrame {
     uint8_t  channel;
     bool     isExtended;
     uint8_t  data[64];
-    double   timestampOffset;  // seconds since engine start
+    uint64_t timestamp_us;  // microseconds since Unix epoch (driver RX time)
 };
 
 static constexpr int kMaxTopIds       = 16;

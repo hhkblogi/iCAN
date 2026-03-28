@@ -1,15 +1,23 @@
 /*
  * shared_ring.h — Shared memory ring buffer layout for app ↔ driver IPC.
  *
- * V4 layout: frame-level SPSC ring buffers with per-channel TX.
- * Driver decodes protocol-specific bytes → canfd_frame → writeRxFrame.
+ * V5 layout: frame-level SPSC ring buffers with per-channel TX and RX timestamps.
+ * Driver decodes protocol-specific bytes → canfd_frame → writeRxFrame (with timestamp).
  * Client reads structured frames. No userspace protocol decoding.
  *
- * Entry format in all data areas:
+ * RX entry format:
+ *   [uint16_t frameSize][uint64_t timestamp_us][canfd_frame or can_frame bytes]
+ *   frameSize = size of the CAN frame only (16 or 72); total entry = 2 + 8 + frameSize
+ *
+ * TX entry format (unchanged):
  *   [uint16_t frameSize][canfd_frame or can_frame bytes]
  *
  * Apple Silicon uses 128-byte cache lines. Each ring control is on its
  * own cache line to minimize false-sharing.
+ *
+ * V5 changes from V4:
+ *   - RX ring entries include a uint64_t timestamp (microseconds since Unix epoch)
+ *   - Timestamp captured at USB completion in the DriverKit extension
  *
  * V4 changes from V3:
  *   - Per-channel TX rings (tx0 for ch0, tx1 for ch1)
@@ -32,8 +40,8 @@
 #include <stdint.h>
 
 #define SHARED_RING_MAGIC           0xCAFECAFEU
-#define SHARED_RING_LAYOUT_VERSION  4
-#define SHARED_RX_CAPACITY          262144  /* 256KB RX data (holds ~3540 frames) */
+#define SHARED_RING_LAYOUT_VERSION  5
+#define SHARED_RX_CAPACITY          262144  /* 256KB RX data (holds ~3200 V5 frames) */
 #define SHARED_TX0_CAPACITY         16384   /* 16KB TX ch0 data (holds ~221 frames) */
 #define SHARED_TX1_CAPACITY         16384   /* 16KB TX ch1 data (holds ~221 frames) */
 #define SHARED_RING_HEADER_SIZE     512
