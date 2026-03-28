@@ -139,7 +139,7 @@ public:
     static constexpr int kMaxReaders = 8;
 
     struct ReaderSlot {
-        canfd_frame fifo[kFrameFifoSize];  // ~144KB per slot
+        CANPacket fifo[kFrameFifoSize];  // ~160KB per slot (frame + timestamp)
         std::atomic<int> head{0};   // producer writes (release), consumer reads (acquire)
         std::atomic<int> tail{0};   // consumer writes (release), producer reads (acquire)
         std::atomic<uint32_t> epoch{0};
@@ -172,8 +172,8 @@ public:
         readers[idx].channel = -1;
     }
 
-    /* Read one frame from a reader's own FIFO. Returns 1 if available, 0 if empty. */
-    int readFrameFromReader(int readerId, canfd_frame* out) {
+    /* Read one packet from a reader's own FIFO. Returns 1 if available, 0 if empty. */
+    int readPacketFromReader(int readerId, CANPacket* out) {
         if (readerId < 0 || readerId >= kMaxReaders) return 0;
         auto& r = readers[readerId];
         int curTail = r.tail.load(std::memory_order_relaxed);
@@ -191,15 +191,15 @@ public:
                r.head.load(std::memory_order_acquire);
     }
 
-    /* Push a frame to all active readers matching the given channel */
-    void fanOutFrame(const canfd_frame& frame, int channel) {
+    /* Push a packet to all active readers matching the given channel */
+    void fanOutPacket(const CANPacket& packet, int channel) {
         for (int i = 0; i < kMaxReaders; i++) {
             auto& r = readers[i];
             if (!r.active || r.channel != channel) continue;
             int curHead = r.head.load(std::memory_order_relaxed);
             int next = (curHead + 1) % kFrameFifoSize;
             if (next != r.tail.load(std::memory_order_acquire)) {
-                r.fifo[curHead] = frame;
+                r.fifo[curHead] = packet;
                 r.head.store(next, std::memory_order_release);
                 r.epoch.fetch_add(1, std::memory_order_release);
                 r.epoch.notify_all();
@@ -247,7 +247,9 @@ public:
      * Device path: frame ring operations
      * ================================================================ */
 
-    /* Drain structured frames from SharedRingHeader RX ring into FIFO */
+    /* Drain structured frames from SharedRingHeader RX ring into FIFO.
+     * V5 RX entry format: [uint16_t frameSize][uint64_t timestamp_us][frame bytes]
+     * Total entry = 2 + 8 + frameSize */
     int drainRxFrames() {
         if (!ringHeader || ringHeader->magic != SHARED_RING_MAGIC) return 0;
 
@@ -261,14 +263,14 @@ public:
 
         while (head != tail) {
             uint32_t avail = head - tail;
-            if (avail < 2) break;
+            if (avail < 10) break;  // minimum: 2 (size) + 8 (timestamp)
 
             // Read entry header: [uint16_t frameSize]
             uint16_t frameSize = static_cast<uint16_t>(
                 static_cast<uint32_t>(rxData[tail % cap]) |
                 (static_cast<uint32_t>(rxData[(tail + 1) % cap]) << 8));
 
-            uint32_t entrySize = 2 + frameSize;
+            uint32_t entrySize = 2 + 8 + frameSize;  // header + timestamp + frame
             if (entrySize > avail) break;  // incomplete entry
 
             // Validate frame size
@@ -277,31 +279,38 @@ public:
                 continue;
             }
 
+            // Read timestamp (8 bytes, little-endian, handle ring wrap)
+            uint64_t timestamp_us = 0;
+            for (uint32_t i = 0; i < 8; i++) {
+                timestamp_us |= static_cast<uint64_t>(rxData[(tail + 2 + i) % cap]) << (i * 8);
+            }
+
             // Read frame bytes (handle ring wrap)
-            canfd_frame frame;
-            memset(&frame, 0, sizeof(canfd_frame));
+            CANPacket packet;
+            packet.timestamp_us = timestamp_us;
+            memset(&packet.frame, 0, sizeof(canfd_frame));
 
             if (frameSize == CAN_MTU) {
                 uint8_t frameBuf[CAN_MTU];
                 for (uint32_t i = 0; i < frameSize; i++) {
-                    frameBuf[i] = rxData[(tail + 2 + i) % cap];
+                    frameBuf[i] = rxData[(tail + 10 + i) % cap];
                 }
                 auto* cf = reinterpret_cast<can_frame*>(frameBuf);
-                frame.can_id = cf->can_id;
-                frame.len = cf->len;
-                frame.flags = 0;
-                frame.__res0 = cf->__res0;  // preserve channel
-                memcpy(frame.data, cf->data, cf->len);
+                packet.frame.can_id = cf->can_id;
+                packet.frame.len = cf->len;
+                packet.frame.flags = 0;
+                packet.frame.__res0 = cf->__res0;  // preserve channel
+                memcpy(packet.frame.data, cf->data, cf->len);
             } else {
                 for (uint32_t i = 0; i < frameSize; i++) {
-                    reinterpret_cast<uint8_t*>(&frame)[i] = rxData[(tail + 2 + i) % cap];
+                    reinterpret_cast<uint8_t*>(&packet.frame)[i] = rxData[(tail + 10 + i) % cap];
                 }
             }
 
             // Fan out to all active readers on the matching channel
-            int ch = CAN_CHANNEL(frame);
+            int ch = CAN_CHANNEL(packet.frame);
             if (ch < 0 || ch >= kMaxChannels) ch = 0;
-            fanOutFrame(frame, ch);
+            fanOutPacket(packet, ch);
             count++;
 
             tail += entrySize;
@@ -864,32 +873,32 @@ int CANClient::write(const struct canfd_frame* frame) {
 
 /* ---- Frame read ---- */
 
-int CANClient::read(struct canfd_frame* frame) {
-    if (!frame) return 0;
+int CANClient::read(struct CANPacket* packet) {
+    if (!packet) return 0;
     ensureReader();
     auto& c = *_impl;
 
     c.drainIOKit();
-    return c.readFrameFromReader(_readerId, frame);
+    return c.readPacketFromReader(_readerId, packet);
 }
 
-int CANClient::readMany(struct canfd_frame* frames, int max_frames) {
-    if (!frames || max_frames <= 0) return 0;
+int CANClient::readMany(struct CANPacket* packets, int max_packets) {
+    if (!packets || max_packets <= 0) return 0;
     ensureReader();
     auto& c = *_impl;
 
     c.drainIOKit();
 
     int count = 0;
-    for (int i = 0; i < max_frames; i++) {
-        if (c.readFrameFromReader(_readerId, &frames[i]) != 1) break;
+    for (int i = 0; i < max_packets; i++) {
+        if (c.readPacketFromReader(_readerId, &packets[i]) != 1) break;
         count++;
     }
     return count;
 }
 
-int CANClient::readManyBlocking(struct canfd_frame* frames, int max_frames, uint32_t timeoutMs) {
-    if (!frames || max_frames <= 0) return 0;
+int CANClient::readManyBlocking(struct CANPacket* packets, int max_packets, uint32_t timeoutMs) {
+    if (!packets || max_packets <= 0) return 0;
     ensureReader();
     auto& c = *_impl;
 
@@ -925,8 +934,8 @@ int CANClient::readManyBlocking(struct canfd_frame* frames, int max_frames, uint
     }
 
     int count = 0;
-    for (int i = 0; i < max_frames; i++) {
-        if (c.readFrameFromReader(_readerId, &frames[i]) != 1) break;
+    for (int i = 0; i < max_packets; i++) {
+        if (c.readPacketFromReader(_readerId, &packets[i]) != 1) break;
         count++;
     }
     return count;

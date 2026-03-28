@@ -13,12 +13,16 @@ struct CANLogMessage: Identifiable {
     
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSSS"
+        f.dateFormat = "HH:mm:ss"
         return f
     }()
 
     var timestampString: String {
-        Self.timestampFormatter.string(from: timestamp)
+        let base = Self.timestampFormatter.string(from: timestamp)
+        // Extract sub-second from timeIntervalSince1970 for 0.1ms (4-digit) resolution
+        let fractional = timestamp.timeIntervalSince1970.truncatingRemainder(dividingBy: 1.0)
+        let tenthsOfMs = Int(fractional * 10000) % 10000
+        return String(format: "%@.%04d", base, tenthsOfMs)
     }
 }
 

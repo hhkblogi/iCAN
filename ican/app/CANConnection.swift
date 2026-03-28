@@ -125,15 +125,15 @@ nonisolated class CANConnection: @unchecked Sendable {
         return client.write(&f) == 1
     }
 
-    func ReceiveFrame() -> canfd_frame? {
-        var frame = canfd_frame()
-        return client.read(&frame) == 1 ? frame : nil
+    func ReceiveFrame() -> CANPacket? {
+        var packet = CANPacket()
+        return client.read(&packet) == 1 ? packet : nil
     }
 
-    func ReceiveFrames(maxFrames: Int = 64) -> [canfd_frame] {
-        var frames = [canfd_frame](repeating: canfd_frame(), count: min(maxFrames, 256))
-        let count = client.readMany(&frames, Int32(frames.count))
-        return count > 0 ? Array(frames.prefix(Int(count))) : []
+    func ReceiveFrames(maxFrames: Int = 64) -> [CANPacket] {
+        var packets = [CANPacket](repeating: CANPacket(), count: min(maxFrames, 256))
+        let count = client.readMany(&packets, Int32(packets.count))
+        return count > 0 ? Array(packets.prefix(Int(count))) : []
     }
 
     // MARK: - Raw Data (SLCAN control commands)

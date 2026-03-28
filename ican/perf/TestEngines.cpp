@@ -109,14 +109,14 @@ static void* bandwidthTxThread(void* arg) {
 
 static void* bandwidthRxThread(void* arg) {
     auto* impl = (BandwidthTestEngineImpl*)arg;
-    canfd_frame frames[256];
+    CANPacket packets[256];
 
     while (!impl->cancelled.load(std::memory_order_relaxed)) {
-        int n = impl->rxClient.readManyBlocking(frames, 256, 5);
+        int n = impl->rxClient.readManyBlocking(packets, 256, 5);
         if (n > 0) {
             impl->engine.addPoll(true, (uint32_t)(n * 20));
             for (int i = 0; i < n; i++) {
-                impl->engine.addReceived(frames[i].data, frames[i].len);
+                impl->engine.addReceived(packets[i].frame.data, packets[i].frame.len);
             }
         } else {
             impl->engine.addPoll(false, 0);
@@ -147,7 +147,7 @@ void BandwidthTestEngine::startTest(CANClient txClient, CANClient rxClient,
 
     // Flush stale frames from previous test
     {
-        canfd_frame buf[256];
+        CANPacket buf[256];
         while (_impl->rxClient.readMany(buf, 256) > 0) {}
     }
 
@@ -265,16 +265,17 @@ static void* bidirRxThread(void* arg) {
     MetricsEngine& engine = isA1 ? impl->engineA2toA1 : impl->engineA1toA2;
     uint32_t filterCanId = isA1 ? 0x201 : 0x200;
 
-    canfd_frame frames[256];
+    CANPacket packets[256];
 
     while (!impl->cancelled.load(std::memory_order_relaxed)) {
-        int n = client.readManyBlocking(frames, 256, 5);
+        int n = client.readManyBlocking(packets, 256, 5);
         if (n > 0) {
             engine.addPoll(true, (uint32_t)(n * 20));
             for (int i = 0; i < n; i++) {
-                uint32_t id = frames[i].can_id & CAN_EFF_MASK;
-                if (id == filterCanId || (frames[i].can_id & CAN_SFF_MASK) == filterCanId) {
-                    engine.addReceived(frames[i].data, frames[i].len);
+                const auto& f = packets[i].frame;
+                uint32_t id = f.can_id & CAN_EFF_MASK;
+                if (id == filterCanId || (f.can_id & CAN_SFF_MASK) == filterCanId) {
+                    engine.addReceived(f.data, f.len);
                 }
             }
         } else {
@@ -318,7 +319,7 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
     // from the prior test, causing spurious gap/ooo counts in MetricsEngine.
     // Two passes with a brief settle to catch in-flight USB transfers.
     {
-        canfd_frame buf[256];
+        CANPacket buf[256];
         while (_impl->a1Client.readMany(buf, 256) > 0) {}
         while (_impl->a2Client.readMany(buf, 256) > 0) {}
         usleep(20000);  // 20ms: let USB pipeline drain
@@ -418,17 +419,18 @@ static void* distBidirTxThread(void* arg) {
 
 static void* distBidirRxThread(void* arg) {
     auto* impl = (DistBidirTestEngineImpl*)arg;
-    canfd_frame frames[256];
+    CANPacket packets[256];
 
     while (!impl->cancelled.load(std::memory_order_relaxed)) {
-        int n = impl->client.readManyBlocking(frames, 256, 5);
+        int n = impl->client.readManyBlocking(packets, 256, 5);
         if (n > 0) {
             impl->engine.addPoll(true, (uint32_t)(n * 20));
             for (int i = 0; i < n; i++) {
-                uint32_t id = frames[i].can_id & CAN_EFF_MASK;
+                const auto& f = packets[i].frame;
+                uint32_t id = f.can_id & CAN_EFF_MASK;
                 if (id == impl->rxCanId ||
-                    (frames[i].can_id & CAN_SFF_MASK) == impl->rxCanId) {
-                    impl->engine.addReceived(frames[i].data, frames[i].len);
+                    (f.can_id & CAN_SFF_MASK) == impl->rxCanId) {
+                    impl->engine.addReceived(f.data, f.len);
                 }
             }
         } else {
@@ -459,7 +461,7 @@ void DistBidirTestEngine::startTest(CANClient client,
 
     // Flush stale frames from previous test
     {
-        canfd_frame buf[256];
+        CANPacket buf[256];
         while (_impl->client.readMany(buf, 256) > 0) {}
     }
 

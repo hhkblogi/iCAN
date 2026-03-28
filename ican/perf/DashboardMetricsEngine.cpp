@@ -24,7 +24,7 @@ struct ParsedFrame {
     uint8_t  flags;
     uint8_t  channel;
     bool     isExtended;
-    double   timestamp;
+    uint64_t timestamp_us;  // microseconds since Unix epoch (from driver)
     uint8_t  data[64];
 };
 
@@ -56,24 +56,17 @@ public:
 
     void readerLoop() {
         constexpr int kBatchSize = 256;
-        canfd_frame frames[kBatchSize];
+        CANPacket packets[kBatchSize];
         ParsedFrame parsed[kBatchSize];
 
         while (!cancelled.load(std::memory_order_relaxed)) {
-            int n = client.readManyBlocking(frames, kBatchSize, 10);  // 10ms timeout
+            int n = client.readManyBlocking(packets, kBatchSize, 10);  // 10ms timeout
             if (n <= 0) continue;
-
-            double elapsed;
-            {
-                std::lock_guard<std::mutex> lock(dataMutex);
-                elapsed = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now() - startTime).count();
-            }
 
             // Pre-parse frames and compute byte total outside the mutex
             uint32_t batchBytes = 0;
             for (int i = 0; i < n; i++) {
-                const auto& f = frames[i];
+                const auto& f = packets[i].frame;
                 auto& p = parsed[i];
                 p.rawId = f.can_id & 0x1FFFFFFFU;
                 p.isExtended = (f.can_id & 0x80000000U) != 0;
@@ -81,7 +74,7 @@ public:
                 p.len = clampedLen;
                 p.flags = f.flags;
                 p.channel = f.__res0;
-                p.timestamp = elapsed;
+                p.timestamp_us = packets[i].timestamp_us;
                 memcpy(p.data, f.data, clampedLen);
                 if (clampedLen < 64) memset(p.data + clampedLen, 0, 64 - clampedLen);
                 batchBytes += clampedLen + 4;  // payload + CAN header overhead
@@ -109,7 +102,7 @@ public:
                     rf.flags = p.flags;
                     rf.channel = p.channel;
                     rf.isExtended = p.isExtended;
-                    rf.timestampOffset = p.timestamp;
+                    rf.timestamp_us = p.timestamp_us;
                     memcpy(rf.data, p.data, 64);
 
                     recentHead = (recentHead + 1) % kMaxRecentFrames;

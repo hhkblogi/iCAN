@@ -1,8 +1,8 @@
 /*
- * can.h — CAN standard frame types and helpers.
+ * can.h — CAN frame types, helpers, and timestamped packet wrapper.
  *
- * Modeled after Linux SocketCAN: include/uapi/linux/can.h
- * Pure C header — no project-specific IPC or implementation details.
+ * Frame types modeled after Linux SocketCAN: include/uapi/linux/can.h
+ * CANPacket adds a driver-level timestamp for per-frame RX timing.
  */
 
 #pragma once
@@ -83,6 +83,15 @@ static inline uint8_t can_fd_len2dlc(uint8_t len) {
     if (len <= 48) return 14;
     return 15;
 }
+
+/* ================================================================
+ * CANPacket — CAN frame with RX timestamp (microseconds since epoch)
+ * ================================================================ */
+
+struct CANPacket {
+    uint64_t timestamp_us;      /* microseconds since Unix epoch (driver RX time) */
+    struct canfd_frame frame;
+};
 
 /* ================================================================
  * CAN channel accessor — uses __res0 field to carry channel number.
