@@ -55,15 +55,9 @@ struct DashboardView: View {
                 HStack(alignment: .top, spacing: 16) {
                     // System Status — per-interface states
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("System Status")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Image(systemName: "network")
-                                .foregroundColor(.green)
-                                .font(.title3)
-                        }
+                        Text("System Status")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(viewModel.adapters, id: \.name) { adapter in
                                 HStack(spacing: 6) {
@@ -84,26 +78,44 @@ struct DashboardView: View {
                     .background(Color.platformSecondaryBackground)
                     .cornerRadius(12)
 
-                    StatCard(
-                        title: "Message Rate",
-                        value: String(format: "%.0f msg/s", viewModel.metrics.messageRate),
-                        icon: "speedometer",
-                        color: .blue
-                    )
+                    // Message Rate — per-interface TX/RX
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Message Rate (msg/s)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(viewModel.busStatuses.enumerated()), id: \.offset) { idx, status in
+                                if idx < viewModel.adapters.count && viewModel.adapters[idx].isCANOpen {
+                                    HStack(spacing: 6) {
+                                        Text(status.name)
+                                            .font(.caption)
+                                            .monospaced()
+                                        Spacer()
+                                        Text(String(format: "TX %.0f", status.txRate))
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                            .monospacedDigit()
+                                        Text(String(format: "RX %.0f", status.messageRate))
+                                            .font(.caption)
+                                            .foregroundColor(.purple)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.platformSecondaryBackground)
+                    .cornerRadius(12)
 
                     StatCard(
                         title: "Throughput",
-                        value: String(format: "%.1f KB/s", viewModel.metrics.throughput),
-                        icon: "arrow.up.arrow.down",
-                        color: .purple
+                        value: String(format: "%.1f KB/s", viewModel.metrics.throughput)
                     )
 
                     StatCard(
                         title: "Bus Load",
-                        value: String(format: "%.1f%%", viewModel.metrics.busLoad),
-                        icon: "chart.pie.fill",
-                        color: viewModel.metrics.busLoad > 80 ? .red :
-                                viewModel.metrics.busLoad > 50 ? .orange : .green
+                        value: String(format: "%.1f%%", viewModel.metrics.busLoad)
                     )
                 }
                 .padding(.horizontal)
@@ -214,20 +226,12 @@ struct DashboardView: View {
 struct StatCard: View {
     let title: String
     let value: String
-    let icon: String
-    let color: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.title3)
-            }
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
 
             Text(value)
                 .font(.title2)
