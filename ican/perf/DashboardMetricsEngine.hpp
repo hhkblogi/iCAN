@@ -29,8 +29,11 @@ static constexpr int kMaxRecentFrames = 200;
 // Full dashboard snapshot — polled by Swift every ~300ms
 struct DashboardSnapshot {
     // Cumulative metrics
-    uint64_t totalMessages;
-    uint64_t totalBytes;
+    uint64_t totalMessages;      // RX frames received
+    uint64_t totalBytes;         // RX bytes
+    uint32_t totalTxFrames;      // TX frames written (app-side)
+    int      rxReaderCount;      // active RX reader clients
+    int      txWriterCount;      // active TX writer clients
     double   duration;           // seconds since start
     uint32_t dropCount;          // driver-side ring drops
 
@@ -46,8 +49,9 @@ struct DashboardSnapshot {
 
 // Per-second rate counters (drained atomically)
 struct DashboardRateCounters {
-    uint32_t messages;
-    uint32_t bytes;
+    uint32_t messages;      // RX
+    uint32_t bytes;         // RX
+    uint32_t txMessages;    // TX
 };
 
 class DashboardMetricsEngineImpl;

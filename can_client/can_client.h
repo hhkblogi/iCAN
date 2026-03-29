@@ -100,6 +100,15 @@ public:
     // Returns 0 when not connected or ring not mapped.
     uint32_t dropCount() const;
 
+    // App-side TX write count for this channel (cumulative).
+    uint32_t txCount() const;
+
+    // Number of active RX reader clients on this channel.
+    int rxReaderCount() const;
+
+    // Number of active TX writer clients on this channel (based on write activity).
+    int txWriterCount() const;
+
     // Codec diagnostic counters from SharedRingHeader (PCAN-specific).
     uint32_t codecEchoCount() const;
     uint32_t codecOverrunCount() const;
@@ -123,6 +132,7 @@ private:
     std::shared_ptr<CANClientImpl> _impl;
     int _channel = 0;   // per-copy channel (copies share connection, not channel)
     int _readerId = -1;  // per-copy reader slot index (-1 = not yet registered)
+    bool _isTxRegistered = false;  // has this copy registered as a TX writer
 };
 
 #endif /* CANClient_hpp */

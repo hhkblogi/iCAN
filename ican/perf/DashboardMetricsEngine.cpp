@@ -38,11 +38,15 @@ public:
 
     CANClient client;
 
-    // --- Atomic counters (hot path — updated per frame) ---
+    // --- Atomic counters (hot path — updated per RX frame) ---
     std::atomic<uint64_t> totalMessages{0};
     std::atomic<uint64_t> totalBytes{0};
     std::atomic<uint32_t> secMessages{0};  // per-second, drained by drainRateCounters
     std::atomic<uint32_t> secBytes{0};
+
+    // --- TX tracking (sampled from CANClient, not atomic — read on snapshot) ---
+    uint32_t lastTxCount{0};        // last sampled txCount
+    std::atomic<uint32_t> secTx{0}; // per-second TX, drained by drainRateCounters
 
     // startTime is protected by dataMutex (read by reader thread, written by reset())
     std::chrono::steady_clock::time_point startTime;
@@ -175,6 +179,17 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
     snap.totalBytes = _impl->totalBytes.load(std::memory_order_relaxed);
     snap.dropCount = _impl->client.dropCount();
 
+    // Sample TX count and compute delta for per-second tracking
+    uint32_t currentTx = _impl->client.txCount();
+    uint32_t txDelta = currentTx - _impl->lastTxCount;
+    if (txDelta > 0) {
+        _impl->secTx.fetch_add(txDelta, std::memory_order_relaxed);
+        _impl->lastTxCount = currentTx;
+    }
+    snap.totalTxFrames = currentTx;
+    snap.rxReaderCount = _impl->client.rxReaderCount();
+    snap.txWriterCount = _impl->client.txWriterCount();
+
     // Copy raw data under lock; sort and format outside lock
     struct IdEntry { uint32_t id; uint32_t count; bool isExt; };
     std::vector<IdEntry> entries;
@@ -216,7 +231,8 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
 DashboardRateCounters DashboardMetricsEngine::drainRateCounters() {
     return {
         _impl->secMessages.exchange(0, std::memory_order_relaxed),
-        _impl->secBytes.exchange(0, std::memory_order_relaxed)
+        _impl->secBytes.exchange(0, std::memory_order_relaxed),
+        _impl->secTx.exchange(0, std::memory_order_relaxed)
     };
 }
 

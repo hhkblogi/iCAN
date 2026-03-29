@@ -33,6 +33,7 @@ class CANDashboardViewModel: ObservableObject {
     @Published var busStatuses: [BusStatus] = []
     @Published var messages: [CANLogMessage] = []
     @Published var messageInterfaceFilter: String = "All"
+    @Published var dashboardInterfaceFilter: String = "All"
     @Published var errorCount: Int = 0
     @Published var messageDistribution: [MessageDistPoint] = []
     @Published var idDistribution: [CANIdDistribution] = []
@@ -214,10 +215,14 @@ class CANDashboardViewModel: ObservableObject {
             bidirInterfaceBIndex = -1
         }
 
-        // Reset message filter if selected interface no longer exists
+        // Reset filters if selected interface no longer exists
         if messageInterfaceFilter != "All" &&
            !adapters.contains(where: { $0.name == messageInterfaceFilter }) {
             messageInterfaceFilter = "All"
+        }
+        if dashboardInterfaceFilter != "All" &&
+           !adapters.contains(where: { $0.name == dashboardInterfaceFilter }) {
+            dashboardInterfaceFilter = "All"
         }
     }
 
@@ -313,6 +318,7 @@ class CANDashboardViewModel: ObservableObject {
                 busLoads.append(load)
                 if i < busStatuses.count {
                     busStatuses[i].messageRate = rateMsgSec
+                    busStatuses[i].txRate = Double(rates[i].txMessages) / elapsed
                 }
             }
             metrics.busLoad = busLoads.max() ?? 0
@@ -342,6 +348,8 @@ class CANDashboardViewModel: ObservableObject {
 
         for i in 0..<min(snapshots.count, busStatuses.count) {
             busStatuses[i].messageCount = Int(snapshots[i].totalMessages)
+            busStatuses[i].rxReaderCount = Int(snapshots[i].rxReaderCount)
+            busStatuses[i].txWriterCount = Int(snapshots[i].txWriterCount)
         }
 
         // ID distribution (top 10 from C++ snapshots)
