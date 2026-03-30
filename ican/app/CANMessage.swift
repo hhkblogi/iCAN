@@ -82,6 +82,47 @@ enum CANBitrate: Int, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - CAN Bus Load Calculation
+
+/// Calculates the nominal bit-time cost of a single CAN frame on the bus.
+/// This accounts for frame overhead, data payload, CRC, and bit stuffing.
+enum CANBusLoad {
+
+    /// Bit-time cost per CAN 2.0 frame (standard 11-bit ID).
+    /// Formula: (SOF + Arb + Ctrl + Data + CRC + ACK + EOF + IFS) × stuffing
+    /// = (1 + 11 + 1 + 1 + 4 + DLC×8 + 15 + 1 + 2 + 7 + 3) × 1.2
+    /// = (46 + DLC×8) × 1.2
+    static func bitsPerFrame_CAN20(dataBytes: Int = 8) -> Double {
+        let overhead = 46.0  // SOF(1) + ID(11) + RTR(1) + IDE(0) + r0(1) + DLC(4) + CRC(15) + CRC_del(1) + ACK(2) + EOF(7) + IFS(3)
+        let dataBits = Double(min(dataBytes, 8)) * 8.0
+        return (overhead + dataBits) * 1.2  // 20% bit stuffing
+    }
+
+    /// Bit-time cost per CAN FD frame (no BRS — single bitrate).
+    /// CAN FD has larger CRC: 17 bits for ≤16 bytes, 21 bits for >16 bytes.
+    static func bitsPerFrame_CANFD(dataBytes: Int = 64) -> Double {
+        let crcBits = dataBytes <= 16 ? 17.0 : 21.0
+        let overhead = 29.0  // SOF(1) + ID(11) + r1(1) + IDE(0) + r0(1) + FDF(1) + res(1) + BRS(1) + ESI(1) + DLC(4) + stuff_cnt(4) + CRC_del(1) + ACK(2)
+        let fixedEnd = 12.0  // EOF(7) + IFS(3) + parity(2)
+        let dataBits = Double(min(dataBytes, 64)) * 8.0
+        // CAN FD uses fixed stuffing in data phase (1 stuff bit per 4 data bits)
+        let dataWithStuff = dataBits * 1.25
+        return (overhead + dataWithStuff + crcBits + fixedEnd) * 1.1  // ~10% arb phase stuffing
+    }
+
+    /// Calculate bus load percentage.
+    /// - Parameters:
+    ///   - framesPerSec: total frames observed on the bus per second (TX + RX)
+    ///   - bitrate: nominal bitrate in bits/sec
+    ///   - isFD: whether CAN FD frames
+    ///   - dataBytes: average payload size
+    static func busLoadPercent(framesPerSec: Double, bitrate: Int, isFD: Bool = false, dataBytes: Int = 8) -> Double {
+        let bpf = isFD ? bitsPerFrame_CANFD(dataBytes: dataBytes) : bitsPerFrame_CAN20(dataBytes: dataBytes)
+        let load = framesPerSec * bpf / Double(max(bitrate, 1)) * 100.0
+        return min(load, 100.0)
+    }
+}
+
 // MARK: - CAN FD DLC Mapping
 
 enum CANFD {

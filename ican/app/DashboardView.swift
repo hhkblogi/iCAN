@@ -108,15 +108,70 @@ struct DashboardView: View {
                     .background(Color.platformSecondaryBackground)
                     .cornerRadius(12)
 
-                    StatCard(
-                        title: "Throughput",
-                        value: String(format: "%.1f KB/s", viewModel.metrics.throughput)
-                    )
+                    // Throughput — per-interface TX/RX
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Throughput (KB/s)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(viewModel.busStatuses.enumerated()), id: \.offset) { idx, status in
+                                if idx < viewModel.adapters.count && viewModel.adapters[idx].isCANOpen {
+                                    HStack(spacing: 6) {
+                                        Text(status.name)
+                                            .font(.caption)
+                                            .monospaced()
+                                        Spacer()
+                                        Text(String(format: "TX %.1f", status.txRate * 12 / 1024))
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                            .monospacedDigit()
+                                        Text(String(format: "RX %.1f", status.messageRate * 12 / 1024))
+                                            .font(.caption)
+                                            .foregroundColor(.purple)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.platformSecondaryBackground)
+                    .cornerRadius(12)
 
-                    StatCard(
-                        title: "Bus Load",
-                        value: String(format: "%.1f%%", viewModel.metrics.busLoad)
-                    )
+                    // Bus Load — per-interface
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Bus Load (%)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                                if adapter.isCANOpen, idx < viewModel.busStatuses.count {
+                                    let status = viewModel.busStatuses[idx]
+                                    let framesPerSec = status.txRate + status.messageRate
+                                    let load = CANBusLoad.busLoadPercent(
+                                        framesPerSec: framesPerSec,
+                                        bitrate: adapter.selectedBitrate.rawValue,
+                                        isFD: adapter.canFDEnabled,
+                                        dataBytes: adapter.canFDEnabled ? 64 : 8
+                                    )
+                                    HStack(spacing: 6) {
+                                        Text(status.name)
+                                            .font(.caption)
+                                            .monospaced()
+                                        Spacer()
+                                        Text(String(format: "%.1f%%", load))
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(load > 80 ? .red : load > 50 ? .orange : .primary)
+                                            .monospacedDigit()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color.platformSecondaryBackground)
+                    .cornerRadius(12)
                 }
                 .padding(.horizontal)
 
