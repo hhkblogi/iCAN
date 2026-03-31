@@ -109,6 +109,9 @@ public:
     // Number of active TX writer clients on this channel (based on write activity).
     int txWriterCount() const;
 
+    // Number of unique TX CAN IDs seen in the last windowSec seconds on this channel.
+    int txUniqueIds(int windowSec = 30) const;
+
     // Codec diagnostic counters from SharedRingHeader (PCAN-specific).
     uint32_t codecEchoCount() const;
     uint32_t codecOverrunCount() const;

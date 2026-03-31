@@ -350,6 +350,8 @@ class CANDashboardViewModel: ObservableObject {
             busStatuses[i].messageCount = Int(snapshots[i].totalMessages)
             busStatuses[i].rxReaderCount = Int(snapshots[i].rxReaderCount)
             busStatuses[i].txWriterCount = Int(snapshots[i].txWriterCount)
+            busStatuses[i].rxUniqueIds30s = Int(snapshots[i].rxUniqueIds30s)
+            busStatuses[i].txUniqueIds30s = Int(snapshots[i].txUniqueIds30s)
         }
 
         // ID distribution (top 10 from C++ snapshots)

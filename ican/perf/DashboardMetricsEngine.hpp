@@ -34,6 +34,8 @@ struct DashboardSnapshot {
     uint32_t totalTxFrames;      // TX frames written (app-side)
     int      rxReaderCount;      // active RX reader clients
     int      txWriterCount;      // active TX writer clients
+    int      rxUniqueIds30s;    // distinct RX CAN IDs in last 30s
+    int      txUniqueIds30s;    // distinct TX CAN IDs in last 30s
     double   duration;           // seconds since start
     uint32_t dropCount;          // driver-side ring drops
 

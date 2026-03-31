@@ -61,15 +61,19 @@ struct DashboardView: View {
                         Text("Status")
                             .frame(width: 120, alignment: .leading)
                         Text("TX msg/s")
-                            .frame(width: 90, alignment: .trailing)
+                            .frame(width: 80, alignment: .trailing)
                         Text("RX msg/s")
-                            .frame(width: 90, alignment: .trailing)
+                            .frame(width: 80, alignment: .trailing)
                         Text("TX KB/s")
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 70, alignment: .trailing)
                         Text("RX KB/s")
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 70, alignment: .trailing)
+                        Text("TX IDs")
+                            .frame(width: 55, alignment: .trailing)
+                        Text("RX IDs")
+                            .frame(width: 55, alignment: .trailing)
                         Text("Bus Load")
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 70, alignment: .trailing)
                     }
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -100,31 +104,30 @@ struct DashboardView: View {
                                 .frame(width: 120, alignment: .leading)
 
                             if adapter.isCANOpen, let status {
-                                // TX msg/s
                                 Text(String(format: "%.0f", status.txRate))
                                     .foregroundColor(.blue)
                                     .monospacedDigit()
-                                    .frame(width: 90, alignment: .trailing)
-
-                                // RX msg/s
+                                    .frame(width: 80, alignment: .trailing)
                                 Text(String(format: "%.0f", status.messageRate))
                                     .foregroundColor(.purple)
                                     .monospacedDigit()
-                                    .frame(width: 90, alignment: .trailing)
-
-                                // TX KB/s
+                                    .frame(width: 80, alignment: .trailing)
                                 Text(String(format: "%.1f", status.txRate * 12 / 1024))
                                     .foregroundColor(.blue)
                                     .monospacedDigit()
-                                    .frame(width: 80, alignment: .trailing)
-
-                                // RX KB/s
+                                    .frame(width: 70, alignment: .trailing)
                                 Text(String(format: "%.1f", status.messageRate * 12 / 1024))
                                     .foregroundColor(.purple)
                                     .monospacedDigit()
-                                    .frame(width: 80, alignment: .trailing)
-
-                                // Bus Load
+                                    .frame(width: 70, alignment: .trailing)
+                                Text("\(status.txUniqueIds30s)")
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 55, alignment: .trailing)
+                                Text("\(status.rxUniqueIds30s)")
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 55, alignment: .trailing)
                                 let load = CANBusLoad.busLoadPercent(
                                     framesPerSec: status.txRate + status.messageRate,
                                     bitrate: adapter.selectedBitrate.rawValue,
@@ -135,14 +138,15 @@ struct DashboardView: View {
                                     .fontWeight(.medium)
                                     .foregroundColor(load > 80 ? .red : load > 50 ? .orange : .primary)
                                     .monospacedDigit()
-                                    .frame(width: 80, alignment: .trailing)
+                                    .frame(width: 70, alignment: .trailing)
                             } else {
-                                // Empty placeholders for closed/not open
-                                Text("—").frame(width: 90, alignment: .trailing)
-                                Text("—").frame(width: 90, alignment: .trailing)
                                 Text("—").frame(width: 80, alignment: .trailing)
                                 Text("—").frame(width: 80, alignment: .trailing)
-                                Text("—").frame(width: 80, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
+                                Text("—").frame(width: 55, alignment: .trailing)
+                                Text("—").frame(width: 55, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
                             }
                         }
                         .font(.caption)

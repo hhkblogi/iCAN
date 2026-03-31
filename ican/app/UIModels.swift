@@ -35,6 +35,8 @@ struct BusStatus: Identifiable {
     var txRate: Double = 0     // TX msg/s
     var rxReaderCount: Int = 0
     var txWriterCount: Int = 0
+    var rxUniqueIds30s: Int = 0
+    var txUniqueIds30s: Int = 0
     var messageCount: Int
     var busLoad: Double
     var isConnected: Bool

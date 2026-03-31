@@ -53,7 +53,9 @@ public:
 
     // --- Mutex-protected state (updated per frame, read ~3x/sec) ---
     std::mutex dataMutex;
-    std::unordered_map<uint32_t, std::pair<uint32_t, bool>> idCounts;  // canId -> (count, isExtended)
+    // canId -> (count, isExtended, lastSeenTimestamp_us)
+    struct IdInfo { uint32_t count; bool isExtended; uint64_t lastSeen_us; };
+    std::unordered_map<uint32_t, IdInfo> idCounts;
     RecentFrame recentBuf[kMaxRecentFrames];
     int recentHead = 0;   // next write position
     int recentCount = 0;  // total written (capped at kMaxRecentFrames)
@@ -97,8 +99,9 @@ public:
                 for (int i = 0; i < n; i++) {
                     const auto& p = parsed[i];
                     auto& entry = idCounts[p.rawId];
-                    entry.first++;
-                    entry.second = p.isExtended;
+                    entry.count++;
+                    entry.isExtended = p.isExtended;
+                    entry.lastSeen_us = p.timestamp_us;
 
                     auto& rf = recentBuf[recentHead];
                     rf.canId = p.rawId;
@@ -202,10 +205,26 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
 
         snap.uniqueIdCount = static_cast<int>(_impl->idCounts.size());
 
-        entries.reserve(_impl->idCounts.size());
-        for (const auto& [id, val] : _impl->idCounts) {
-            entries.push_back({id, val.first, val.second});
+        // Count RX IDs active in last 30 seconds
+        uint64_t now_us = 0;
+        if (!_impl->idCounts.empty()) {
+            // Use the most recent timestamp as "now" reference
+            for (const auto& [id, info] : _impl->idCounts) {
+                if (info.lastSeen_us > now_us) now_us = info.lastSeen_us;
+            }
         }
+        uint64_t window_us = 30ULL * 1000000ULL;  // 30 seconds
+        int rxIds30s = 0;
+
+        entries.reserve(_impl->idCounts.size());
+        for (const auto& [id, info] : _impl->idCounts) {
+            entries.push_back({id, info.count, info.isExtended});
+            if (now_us > 0 && (now_us - info.lastSeen_us) < window_us) {
+                rxIds30s++;
+            }
+        }
+        snap.rxUniqueIds30s = rxIds30s;
+        snap.txUniqueIds30s = _impl->client.txUniqueIds(30);
 
         // Copy recent frames (newest first)
         snap.recentFrameCount = _impl->recentCount;

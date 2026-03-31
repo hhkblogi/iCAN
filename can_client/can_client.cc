@@ -17,6 +17,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
+#include <time.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -140,6 +142,10 @@ public:
     // Per-channel TX write counters (incremented in writeTxFrame, read by dashboard engine)
     std::atomic<uint32_t> txWriteCount[kMaxChannels] = {};
     std::atomic<int> txWriterCount[kMaxChannels] = {};  // distinct writers per channel
+
+    // Per-channel TX CAN ID tracking: canId -> last write timestamp (microseconds)
+    std::mutex txIdMutex;
+    std::unordered_map<uint32_t, uint64_t> txIdLastSeen[kMaxChannels];
     static constexpr int kMaxReaders = 8;
 
     struct ReaderSlot {
@@ -369,8 +375,15 @@ public:
         }
 
         ring_store_head_release(txCtrl, head + entrySize);
-        if (channel >= 0 && channel < kMaxChannels)
+        if (channel >= 0 && channel < kMaxChannels) {
             txWriteCount[channel].fetch_add(1, std::memory_order_relaxed);
+            // Track TX CAN ID with timestamp
+            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
+            {
+                std::lock_guard<std::mutex> lock(txIdMutex);
+                txIdLastSeen[channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+            }
+        }
         return true;
     }
 
@@ -999,6 +1012,21 @@ int CANClient::txWriterCount() const {
     if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels)
         return c.txWriterCount[_channel].load(std::memory_order_relaxed);
     return 0;
+}
+
+int CANClient::txUniqueIds(int windowSec) const {
+    auto& c = *_impl;
+    if (_channel < 0 || _channel >= CANClientImpl::kMaxChannels) return 0;
+    uint64_t now_us = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+    uint64_t window_us = static_cast<uint64_t>(windowSec) * 1000000ULL;
+    int count = 0;
+    {
+        std::lock_guard<std::mutex> lock(c.txIdMutex);
+        for (const auto& [id, lastSeen] : c.txIdLastSeen[_channel]) {
+            if ((now_us - lastSeen) < window_us) count++;
+        }
+    }
+    return count;
 }
 
 uint32_t CANClient::codecEchoCount() const {
