@@ -52,138 +52,111 @@ struct DashboardView: View {
                 .padding(.horizontal)
 
                 // Top Stats Row
-                HStack(alignment: .top, spacing: 16) {
-                    // System Status — per-interface states
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("System Status")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(viewModel.adapters, id: \.name) { adapter in
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(interfaceStatusColor(adapter))
-                                        .frame(width: 6, height: 6)
-                                    Text(adapter.name)
-                                        .font(.caption)
-                                        .monospaced()
-                                    Text(interfaceStatusText(adapter))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
+                // Metrics Table
+                VStack(spacing: 0) {
+                    // Header row
+                    HStack(spacing: 0) {
+                        Text("Interface")
+                            .frame(width: 80, alignment: .leading)
+                        Text("Status")
+                            .frame(width: 120, alignment: .leading)
+                        Text("TX msg/s")
+                            .frame(width: 90, alignment: .trailing)
+                        Text("RX msg/s")
+                            .frame(width: 90, alignment: .trailing)
+                        Text("TX KB/s")
+                            .frame(width: 80, alignment: .trailing)
+                        Text("RX KB/s")
+                            .frame(width: 80, alignment: .trailing)
+                        Text("Bus Load")
+                            .frame(width: 80, alignment: .trailing)
                     }
-                    .padding()
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(12)
-
-                    // Message Rate — per-interface TX/RX
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Message Rate (msg/s)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(viewModel.busStatuses.enumerated()), id: \.offset) { idx, status in
-                                if idx < viewModel.adapters.count && viewModel.adapters[idx].isCANOpen {
-                                    HStack(spacing: 6) {
-                                        Text(status.name)
-                                            .font(.caption)
-                                            .monospaced()
-                                        Spacer()
-                                        Text(String(format: "TX %.0f", status.txRate))
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                            .monospacedDigit()
-                                        Text(String(format: "RX %.0f", status.messageRate))
-                                            .font(.caption)
-                                            .foregroundColor(.purple)
-                                            .monospacedDigit()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(12)
-
-                    // Throughput — per-interface TX/RX
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Throughput (KB/s)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(viewModel.busStatuses.enumerated()), id: \.offset) { idx, status in
-                                if idx < viewModel.adapters.count && viewModel.adapters[idx].isCANOpen {
-                                    HStack(spacing: 6) {
-                                        Text(status.name)
-                                            .font(.caption)
-                                            .monospaced()
-                                        Spacer()
-                                        Text(String(format: "TX %.1f", status.txRate * 12 / 1024))
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                            .monospacedDigit()
-                                        Text(String(format: "RX %.1f", status.messageRate * 12 / 1024))
-                                            .font(.caption)
-                                            .foregroundColor(.purple)
-                                            .monospacedDigit()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(12)
-
-                    // Bus Load — per-interface
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Bus Load (%)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
-                                if adapter.isCANOpen, idx < viewModel.busStatuses.count {
-                                    let status = viewModel.busStatuses[idx]
-                                    let framesPerSec = status.txRate + status.messageRate
-                                    let load = CANBusLoad.busLoadPercent(
-                                        framesPerSec: framesPerSec,
-                                        bitrate: adapter.selectedBitrate.rawValue,
-                                        isFD: adapter.canFDEnabled,
-                                        dataBytes: adapter.canFDEnabled ? 64 : 8
-                                    )
-                                    HStack(spacing: 6) {
-                                        Text(status.name)
-                                            .font(.caption)
-                                            .monospaced()
-                                        Spacer()
-                                        Text(String(format: "%.1f%%", load))
-                                            .font(.caption)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(load > 80 ? .red : load > 50 ? .orange : .primary)
-                                            .monospacedDigit()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(12)
-                }
-                .padding(.horizontal)
-
-                // Hardware Status Cards (only shown for per-interface view)
-                if viewModel.dashboardInterfaceFilter != "All" {
-                    HStack(spacing: 16) {
-                        ForEach(filteredBusStatuses) { status in
-                            HardwareStatusCard(status: status)
-                        }
-                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                     .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color.platformSecondaryBackground.opacity(0.5))
+
+                    Divider()
+
+                    // Data rows
+                    ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                        let status = idx < viewModel.busStatuses.count ? viewModel.busStatuses[idx] : nil
+
+                        HStack(spacing: 0) {
+                            // Interface name
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(interfaceStatusColor(adapter))
+                                    .frame(width: 6, height: 6)
+                                Text(adapter.name)
+                                    .monospaced()
+                            }
+                            .frame(width: 80, alignment: .leading)
+
+                            // Status
+                            Text(interfaceStatusText(adapter))
+                                .foregroundColor(.secondary)
+                                .frame(width: 120, alignment: .leading)
+
+                            if adapter.isCANOpen, let status {
+                                // TX msg/s
+                                Text(String(format: "%.0f", status.txRate))
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 90, alignment: .trailing)
+
+                                // RX msg/s
+                                Text(String(format: "%.0f", status.messageRate))
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 90, alignment: .trailing)
+
+                                // TX KB/s
+                                Text(String(format: "%.1f", status.txRate * 12 / 1024))
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 80, alignment: .trailing)
+
+                                // RX KB/s
+                                Text(String(format: "%.1f", status.messageRate * 12 / 1024))
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 80, alignment: .trailing)
+
+                                // Bus Load
+                                let load = CANBusLoad.busLoadPercent(
+                                    framesPerSec: status.txRate + status.messageRate,
+                                    bitrate: adapter.selectedBitrate.rawValue,
+                                    isFD: adapter.canFDEnabled,
+                                    dataBytes: adapter.canFDEnabled ? 64 : 8
+                                )
+                                Text(String(format: "%.1f%%", load))
+                                    .fontWeight(.medium)
+                                    .foregroundColor(load > 80 ? .red : load > 50 ? .orange : .primary)
+                                    .monospacedDigit()
+                                    .frame(width: 80, alignment: .trailing)
+                            } else {
+                                // Empty placeholders for closed/not open
+                                Text("—").frame(width: 90, alignment: .trailing)
+                                Text("—").frame(width: 90, alignment: .trailing)
+                                Text("—").frame(width: 80, alignment: .trailing)
+                                Text("—").frame(width: 80, alignment: .trailing)
+                                Text("—").frame(width: 80, alignment: .trailing)
+                            }
+                        }
+                        .font(.caption)
+                        .padding(.horizontal)
+                        .padding(.vertical, 6)
+
+                        if idx < viewModel.adapters.count - 1 {
+                            Divider().padding(.horizontal)
+                        }
+                    }
                 }
+                .background(Color.platformSecondaryBackground)
+                .cornerRadius(12)
+                .padding(.horizontal)
 
                 // Charts Suite Row
                 HStack(spacing: 16) {
