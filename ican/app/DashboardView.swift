@@ -197,25 +197,6 @@ struct DashboardView: View {
                         }
                     }
 
-                    // ID Distribution Chart
-                    ChartCard(title: "Active CAN IDs") {
-                        if viewModel.idDistribution.isEmpty {
-                            ContentUnavailableView("Waiting for data...", systemImage: "chart.pie")
-                        } else {
-                            Chart(viewModel.idDistribution) { item in
-                                BarMark(
-                                    x: .value("Count", item.count),
-                                    y: .value("CAN ID", item.canId)
-                                )
-                                .foregroundStyle(by: .value("ID", item.canId))
-                                .annotation(position: .trailing) {
-                                    Text("\(item.count)").font(.caption).foregroundColor(.secondary)
-                                }
-                            }
-                            .chartLegend(.hidden)
-                            .chartXAxis(.hidden)
-                        }
-                    }
                 }
                 .frame(height: 250)
                 .padding(.horizontal)
