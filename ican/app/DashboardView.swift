@@ -178,14 +178,14 @@ struct DashboardView: View {
                 // Traffic Volume Charts
                 LazyVGrid(columns: trafficChartColumns, spacing: 16) {
                     TrafficChartCard(
-                        title: "TX Traffic (msg/s)",
+                        title: "TX Traffic",
                         points: visibleTrafficHistory,
                         now: now,
                         rateKeyPath: \.txRate
                     )
 
                     TrafficChartCard(
-                        title: "RX Traffic (msg/s)",
+                        title: "RX Traffic",
                         points: visibleTrafficHistory,
                         now: now,
                         rateKeyPath: \.rxRate
@@ -373,6 +373,8 @@ struct TrafficChartCard: View {
                         }
                     }
                 }
+                .chartXAxisLabel("Time (sec)", alignment: .center)
+                .chartYAxisLabel("Msg #", position: .leading)
                 .chartPlotStyle { plotArea in
                     plotArea
                         .background(Color.platformBackground.opacity(0.35))
