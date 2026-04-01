@@ -16,6 +16,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <time.h>
 
 // Pre-parsed frame data prepared outside the mutex
 struct ParsedFrame {
@@ -184,7 +185,12 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
 
     // Sample TX count and compute delta for per-second tracking
     uint32_t currentTx = _impl->client.txCount();
-    uint32_t txDelta = currentTx - _impl->lastTxCount;
+    uint32_t txDelta = 0;
+    if (currentTx >= _impl->lastTxCount) {
+        txDelta = currentTx - _impl->lastTxCount;
+    } else {
+        txDelta = 0;  // wrap or reset
+    }
     if (txDelta > 0) {
         _impl->secTx.fetch_add(txDelta, std::memory_order_relaxed);
         _impl->lastTxCount = currentTx;
@@ -206,13 +212,7 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
         snap.uniqueIdCount = static_cast<int>(_impl->idCounts.size());
 
         // Count RX IDs active in last 30 seconds
-        uint64_t now_us = 0;
-        if (!_impl->idCounts.empty()) {
-            // Use the most recent timestamp as "now" reference
-            for (const auto& [id, info] : _impl->idCounts) {
-                if (info.lastSeen_us > now_us) now_us = info.lastSeen_us;
-            }
-        }
+        uint64_t now_us = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
         uint64_t window_us = 30ULL * 1000000ULL;  // 30 seconds
         int rxIds30s = 0;
 
@@ -263,6 +263,8 @@ void DashboardMetricsEngine::reset() {
     _impl->totalBytes.store(0, std::memory_order_relaxed);
     _impl->secMessages.store(0, std::memory_order_relaxed);
     _impl->secBytes.store(0, std::memory_order_relaxed);
+    _impl->secTx.store(0, std::memory_order_relaxed);
+    _impl->lastTxCount = 0;
 
     std::lock_guard<std::mutex> lock(_impl->dataMutex);
     _impl->startTime = std::chrono::steady_clock::now();

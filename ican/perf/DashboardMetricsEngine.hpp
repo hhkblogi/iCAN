@@ -31,7 +31,7 @@ struct DashboardSnapshot {
     // Cumulative metrics
     uint64_t totalMessages;      // RX frames received
     uint64_t totalBytes;         // RX bytes
-    uint32_t totalTxFrames;      // TX frames written (app-side)
+    uint64_t totalTxFrames;      // TX frames written (app-side)
     int      rxReaderCount;      // active RX reader clients
     int      txWriterCount;      // active TX writer clients
     int      rxUniqueIds30s;    // distinct RX CAN IDs in last 30s

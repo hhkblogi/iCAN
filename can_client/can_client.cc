@@ -1000,6 +1000,7 @@ uint32_t CANClient::txCount() const {
 int CANClient::rxReaderCount() const {
     auto& c = *_impl;
     int count = 0;
+    std::lock_guard<std::mutex> lock(c.readers_lock);
     for (int i = 0; i < CANClientImpl::kMaxReaders; i++) {
         if (c.readers[i].active && c.readers[i].channel == _channel)
             count++;
