@@ -347,15 +347,16 @@ struct TrafficChartCard: View {
                         .opacity(0.8)
                     }
                 }
-                .chartXScale(domain: now.addingTimeInterval(-20)...now.addingTimeInterval(0.5))
+                .chartXScale(domain: now.addingTimeInterval(-20)...now.addingTimeInterval(1))
                 .chartXAxis {
                     AxisMarks(values: xAxisTicks) { value in
                         AxisGridLine()
                         AxisValueLabel {
                             if let date = value.as(Date.self) {
                                 let offset = Int(round(date.timeIntervalSince(now)))
-                                Text("\(offset)s")
+                                Text("\(offset)")
                                     .font(.caption2)
+                                    .fixedSize()
                             }
                         }
                     }
