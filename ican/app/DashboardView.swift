@@ -32,7 +32,20 @@ struct DashboardView: View {
     }
 
     private var visibleTrafficHistory: [InterfaceTrafficPoint] {
-        viewModel.interfaceTrafficHistory.filter { openInterfaceNames.contains($0.interfaceName) }
+        let filter = viewModel.dashboardInterfaceFilter
+        return viewModel.interfaceTrafficHistory.filter { point in
+            openInterfaceNames.contains(point.interfaceName) &&
+            (filter == "All" || point.interfaceName == filter)
+        }
+    }
+
+    /// Adapters to show in the metrics table
+    private var visibleAdapters: [(offset: Int, element: SerialAdapter)] {
+        let all = Array(viewModel.adapters.enumerated())
+        if let idx = selectedAdapterIndex {
+            return all.filter { $0.offset == idx }
+        }
+        return all
     }
 
     private var trafficChartColumns: [GridItem] {
@@ -97,7 +110,7 @@ struct DashboardView: View {
                     Divider()
 
                     // Data rows
-                    ForEach(Array(viewModel.adapters.enumerated()), id: \.offset) { idx, adapter in
+                    ForEach(visibleAdapters, id: \.offset) { idx, adapter in
                         let status = idx < viewModel.busStatuses.count ? viewModel.busStatuses[idx] : nil
 
                         HStack(spacing: 0) {
@@ -166,7 +179,7 @@ struct DashboardView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 6)
 
-                        if idx < viewModel.adapters.count - 1 {
+                        if idx < visibleAdapters.last?.offset ?? 0 {
                             Divider().padding(.horizontal)
                         }
                     }
