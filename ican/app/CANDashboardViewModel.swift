@@ -36,6 +36,7 @@ class CANDashboardViewModel: ObservableObject {
     @Published var dashboardInterfaceFilter: String = "All"
     @Published var errorCount: Int = 0
     @Published var messageDistribution: [MessageDistPoint] = []
+    @Published var interfaceTrafficHistory: [InterfaceTrafficPoint] = []
     @Published var idDistribution: [CANIdDistribution] = []
     @Published var busLoadHistory: [BusLoadPoint] = []
     @Published var messageRateHistory: [MessageRatePoint] = []
@@ -336,6 +337,23 @@ class CANDashboardViewModel: ObservableObject {
             messageDistribution.append(MessageDistPoint(timestamp: now, count: Int(totalMessages)))
             if messageDistribution.count > 30 { messageDistribution.removeFirst() }
 
+            // Per-interface TX/RX traffic history
+            for i in 0..<min(rates.count, adapters.count) {
+                let txRate = Double(rates[i].txMessages) / elapsed
+                let rxRate = Double(rates[i].messages) / elapsed
+                interfaceTrafficHistory.append(InterfaceTrafficPoint(
+                    timestamp: now,
+                    interfaceName: adapters[i].name,
+                    txRate: txRate,
+                    rxRate: rxRate
+                ))
+            }
+            // Keep last 60 samples per interface
+            let maxPoints = 60 * max(adapters.count, 1)
+            if interfaceTrafficHistory.count > maxPoints {
+                interfaceTrafficHistory.removeFirst(interfaceTrafficHistory.count - maxPoints)
+            }
+
             lastRateTime = now
         }
 
@@ -435,6 +453,7 @@ class CANDashboardViewModel: ObservableObject {
         messageRateHistory.removeAll()
         busLoadHistory.removeAll()
         messageDistribution.removeAll()
+        interfaceTrafficHistory.removeAll()
     }
 
     // MARK: - Tests

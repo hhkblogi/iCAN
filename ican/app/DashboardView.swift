@@ -27,8 +27,21 @@ struct DashboardView: View {
         return viewModel.busStatuses
     }
 
+    private var openInterfaceNames: Set<String> {
+        Set(viewModel.adapters.filter(\.isCANOpen).map(\.name))
+    }
+
+    private var visibleTrafficHistory: [InterfaceTrafficPoint] {
+        viewModel.interfaceTrafficHistory.filter { openInterfaceNames.contains($0.interfaceName) }
+    }
+
+    private var trafficChartColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    }
+
     var body: some View {
         ScrollView {
+            let now = Date()
             VStack(spacing: 20) {
                 // Interface tabs
                 HStack(spacing: 4) {
@@ -162,43 +175,22 @@ struct DashboardView: View {
                 .cornerRadius(12)
                 .padding(.horizontal)
 
-                // Charts Suite Row
-                HStack(spacing: 16) {
-                    // Traffic over time Mini Chart
-                    ChartCard(title: "Traffic Volume (msg/s)") {
-                        if viewModel.messageDistribution.isEmpty {
-                            ContentUnavailableView("Waiting for data...", systemImage: "chart.xyaxis.line")
-                        } else {
-                            Chart {
-                                ForEach(viewModel.messageDistribution) { point in
-                                    AreaMark(
-                                        x: .value("Time", point.timestamp),
-                                        y: .value("Messages", point.count)
-                                    )
-                                    .foregroundStyle(
-                                        .linearGradient(
-                                            colors: [.blue.opacity(0.5), .blue.opacity(0.1)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
+                // Traffic Volume Charts
+                LazyVGrid(columns: trafficChartColumns, spacing: 16) {
+                    TrafficChartCard(
+                        title: "TX Traffic (msg/s)",
+                        points: visibleTrafficHistory,
+                        now: now,
+                        rateKeyPath: \.txRate
+                    )
 
-                                    LineMark(
-                                        x: .value("Time", point.timestamp),
-                                        y: .value("Messages", point.count)
-                                    )
-                                    .foregroundStyle(.blue)
-                                }
-                            }
-                            .chartXAxis(.hidden)
-                            .chartYAxis {
-                                AxisMarks(position: .leading)
-                            }
-                        }
-                    }
-
+                    TrafficChartCard(
+                        title: "RX Traffic (msg/s)",
+                        points: visibleTrafficHistory,
+                        now: now,
+                        rateKeyPath: \.rxRate
+                    )
                 }
-                .frame(height: 250)
                 .padding(.horizontal)
 
                 Spacer(minLength: 20)
@@ -306,15 +298,90 @@ struct ChartCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.headline)
                 .padding([.top, .leading, .trailing])
 
             content()
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.platformSecondaryBackground)
         .cornerRadius(12)
+    }
+}
+
+struct TrafficChartCard: View {
+    let title: String
+    let points: [InterfaceTrafficPoint]
+    let now: Date
+    let rateKeyPath: KeyPath<InterfaceTrafficPoint, Double>
+
+    private var xAxisTicks: [Date] {
+        [
+            now.addingTimeInterval(-20),
+            now.addingTimeInterval(-15),
+            now.addingTimeInterval(-10),
+            now.addingTimeInterval(-5),
+            now
+        ]
+    }
+
+    var body: some View {
+        ChartCard(title: title) {
+            if points.isEmpty {
+                ContentUnavailableView("Waiting for data...", systemImage: "chart.xyaxis.line")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Chart {
+                    ForEach(points) { point in
+                        LineMark(
+                            x: .value("Time", point.timestamp),
+                            y: .value("Rate", point[keyPath: rateKeyPath]),
+                            series: .value("Interface", point.interfaceName)
+                        )
+                        .foregroundStyle(by: .value("Interface", point.interfaceName))
+                        .lineStyle(StrokeStyle(lineWidth: 2.5))
+                        .opacity(0.8)
+                    }
+                }
+                .chartXScale(domain: now.addingTimeInterval(-20)...now.addingTimeInterval(0.5))
+                .chartXAxis {
+                    AxisMarks(values: xAxisTicks) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let date = value.as(Date.self) {
+                                let offset = Int(round(date.timeIntervalSince(now)))
+                                Text("\(offset)s")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+                .chartYScale(domain: 0...max(points.map { $0[keyPath: rateKeyPath] }.max() ?? 0, 4000) * 1.1)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 6)) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let val = value.as(Double.self) {
+                                Text(String(format: "%.0f", val))
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+                .chartPlotStyle { plotArea in
+                    plotArea
+                        .background(Color.platformBackground.opacity(0.35))
+                        .border(Color.secondary.opacity(0.2))
+                        .clipped()
+                }
+                .chartLegend(position: .bottom, alignment: .leading, spacing: 12)
+                .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
     }
 }

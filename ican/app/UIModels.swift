@@ -74,6 +74,14 @@ struct MessageRatePoint: Identifiable {
     let messageRate: Double
 }
 
+struct InterfaceTrafficPoint: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let interfaceName: String
+    let txRate: Double
+    let rxRate: Double
+}
+
 struct BandwidthHistoryPoint: Identifiable {
     let id = UUID()
     let timestamp: Date
