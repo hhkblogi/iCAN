@@ -1036,7 +1036,7 @@ int CANClient::txUniqueIds(int windowSec) const {
     {
         std::lock_guard<std::mutex> lock(c.txIdMutex);
         for (const auto& [id, lastSeen] : c.txIdLastSeen[_channel]) {
-            if ((now_us - lastSeen) < window_us) count++;
+            if (now_us >= lastSeen && (now_us - lastSeen) < window_us) count++;
         }
     }
     return count;

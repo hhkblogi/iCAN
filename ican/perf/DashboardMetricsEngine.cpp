@@ -219,7 +219,7 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
         entries.reserve(_impl->idCounts.size());
         for (const auto& [id, info] : _impl->idCounts) {
             entries.push_back({id, info.count, info.isExtended});
-            if (now_us > 0 && (now_us - info.lastSeen_us) < window_us) {
+            if (now_us >= info.lastSeen_us && (now_us - info.lastSeen_us) < window_us) {
                 rxIds30s++;
             }
         }
