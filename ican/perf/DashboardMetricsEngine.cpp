@@ -193,8 +193,8 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
     }
     if (txDelta > 0) {
         _impl->secTx.fetch_add(txDelta, std::memory_order_relaxed);
-        _impl->lastTxCount = currentTx;
     }
+    _impl->lastTxCount = currentTx;
     snap.totalTxFrames = currentTx;
     snap.rxReaderCount = _impl->client.rxReaderCount();
     snap.txWriterCount = _impl->client.txWriterCount();
@@ -264,7 +264,7 @@ void DashboardMetricsEngine::reset() {
     _impl->secMessages.store(0, std::memory_order_relaxed);
     _impl->secBytes.store(0, std::memory_order_relaxed);
     _impl->secTx.store(0, std::memory_order_relaxed);
-    _impl->lastTxCount = 0;
+    _impl->lastTxCount = _impl->client.txCount();
 
     std::lock_guard<std::mutex> lock(_impl->dataMutex);
     _impl->startTime = std::chrono::steady_clock::now();

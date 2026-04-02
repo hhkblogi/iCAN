@@ -377,12 +377,6 @@ public:
         ring_store_head_release(txCtrl, head + entrySize);
         if (channel >= 0 && channel < kMaxChannels) {
             txWriteCount[channel].fetch_add(1, std::memory_order_relaxed);
-            // Track TX CAN ID with timestamp
-            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
-            {
-                std::lock_guard<std::mutex> lock(txIdMutex);
-                txIdLastSeen[channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
-            }
         }
         return true;
     }
@@ -879,6 +873,15 @@ int CANClient::writeClassic(const struct can_frame* frame) {
         c.txWriterCount[_channel].fetch_add(1, std::memory_order_relaxed);
         _isTxRegistered = true;
     }
+    // Track TX CAN ID (sampled — not every frame)
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        uint32_t count = c.txWriteCount[_channel].load(std::memory_order_relaxed);
+        if ((count & 0xFF) == 0) {  // sample every ~256 writes
+            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
+            std::lock_guard<std::mutex> lock(c.txIdMutex);
+            c.txIdLastSeen[_channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+        }
+    }
     c.triggerTxDrain();
     return 1;
 }
@@ -895,6 +898,15 @@ int CANClient::write(const struct canfd_frame* frame) {
     if (!_isTxRegistered && _channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
         c.txWriterCount[_channel].fetch_add(1, std::memory_order_relaxed);
         _isTxRegistered = true;
+    }
+    // Track TX CAN ID (sampled)
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        uint32_t count = c.txWriteCount[_channel].load(std::memory_order_relaxed);
+        if ((count & 0xFF) == 0) {
+            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
+            std::lock_guard<std::mutex> lock(c.txIdMutex);
+            c.txIdLastSeen[_channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+        }
     }
     c.triggerTxDrain();
     return 1;

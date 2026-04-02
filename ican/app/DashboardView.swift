@@ -19,14 +19,6 @@ struct DashboardView: View {
         return viewModel.adapters.firstIndex(where: { $0.name == viewModel.dashboardInterfaceFilter })
     }
 
-    /// Filtered bus statuses
-    private var filteredBusStatuses: [BusStatus] {
-        if let idx = selectedAdapterIndex, idx < viewModel.busStatuses.count {
-            return [viewModel.busStatuses[idx]]
-        }
-        return viewModel.busStatuses
-    }
-
     private var openInterfaceNames: Set<String> {
         Set(viewModel.adapters.filter(\.isCANOpen).map(\.name))
     }
