@@ -74,7 +74,7 @@ struct MessageRatePoint: Identifiable {
     let messageRate: Double
 }
 
-struct InterfaceTrafficPoint: Identifiable {
+struct InterfaceTrafficPoint: Identifiable, Equatable {
     let id = UUID()
     let timestamp: Date
     let interfaceName: String

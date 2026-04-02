@@ -189,19 +189,24 @@ struct DashboardView: View {
                 .padding(.horizontal)
 
                 // Traffic Volume Charts
+                let trafficPoints = visibleTrafficHistory
+                let txMax = trafficPoints.lazy.map(\.txRate).max() ?? 0
+                let rxMax = trafficPoints.lazy.map(\.rxRate).max() ?? 0
                 LazyVGrid(columns: trafficChartColumns, spacing: 16) {
                     TrafficChartCard(
                         title: "TX Traffic",
-                        points: visibleTrafficHistory,
+                        points: trafficPoints,
                         now: now,
-                        rateKeyPath: \.txRate
+                        rateKeyPath: \.txRate,
+                        maxRate: txMax
                     )
 
                     TrafficChartCard(
                         title: "RX Traffic",
-                        points: visibleTrafficHistory,
+                        points: trafficPoints,
                         now: now,
-                        rateKeyPath: \.rxRate
+                        rateKeyPath: \.rxRate,
+                        maxRate: rxMax
                     )
                 }
                 .padding(.horizontal)
@@ -331,6 +336,7 @@ struct TrafficChartCard: View {
     let points: [InterfaceTrafficPoint]
     let now: Date
     let rateKeyPath: KeyPath<InterfaceTrafficPoint, Double>
+    let maxRate: Double
 
     private var xAxisTicks: [Date] {
         [
@@ -348,17 +354,15 @@ struct TrafficChartCard: View {
                 ContentUnavailableView("Waiting for data...", systemImage: "chart.xyaxis.line")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Chart {
-                    ForEach(points) { point in
-                        LineMark(
-                            x: .value("Time", point.timestamp),
-                            y: .value("Rate", point[keyPath: rateKeyPath]),
-                            series: .value("Interface", point.interfaceName)
-                        )
-                        .foregroundStyle(by: .value("Interface", point.interfaceName))
-                        .lineStyle(StrokeStyle(lineWidth: 2.5))
-                        .opacity(0.8)
-                    }
+                Chart(points) { point in
+                    LineMark(
+                        x: .value("Time", point.timestamp),
+                        y: .value("Rate", point[keyPath: rateKeyPath]),
+                        series: .value("Interface", point.interfaceName)
+                    )
+                    .foregroundStyle(by: .value("Interface", point.interfaceName))
+                    .lineStyle(StrokeStyle(lineWidth: 2.5))
+                    .opacity(0.8)
                 }
                 .chartXScale(domain: now.addingTimeInterval(-20)...now.addingTimeInterval(1))
                 .chartXAxis {
@@ -374,7 +378,7 @@ struct TrafficChartCard: View {
                         }
                     }
                 }
-                .chartYScale(domain: 0...max(points.map { $0[keyPath: rateKeyPath] }.max() ?? 0, 4000) * 1.1)
+                .chartYScale(domain: 0...max(maxRate, 4000) * 1.1)
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 6)) { value in
                         AxisGridLine()
@@ -396,6 +400,7 @@ struct TrafficChartCard: View {
                 }
                 .chartLegend(position: .bottom, alignment: .leading, spacing: 12)
                 .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity)
+                .drawingGroup()  // GPU-accelerated rendering for smooth chart updates
             }
         }
         .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
