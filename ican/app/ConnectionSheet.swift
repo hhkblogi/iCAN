@@ -108,12 +108,12 @@ struct InterfaceSection: View {
         HStack {
             if !adapter.isConnected {
                 Button("Connect") { onConnect() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderless)
                     .disabled(adapter.isConnecting)
             } else if adapter.isCANOpen {
                 HStack(spacing: 6) {
                     Circle().fill(.green).frame(width: 8, height: 8)
-                    Text("CAN Open").font(.caption).foregroundColor(.green)
+                    Text("CAN bus active").font(.caption).foregroundColor(.green)
                 }
 
                 Spacer()
@@ -121,11 +121,12 @@ struct InterfaceSection: View {
                 Button { onCloseCAN() } label: {
                     Label("Close", systemImage: "stop.fill")
                 }
+                .buttonStyle(.borderless)
                 .foregroundColor(.orange)
                 .font(.caption)
             } else {
                 Button("Open") { onOpenCAN() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderless)
 
                 Spacer()
 
