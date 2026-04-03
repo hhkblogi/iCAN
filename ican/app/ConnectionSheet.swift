@@ -18,7 +18,7 @@ struct PortsView: View {
                 }
             } else {
                 ForEach(viewModel.usbAdapters) { usbAdapter in
-                    Section("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)") {
+                    Section {
                         ForEach(usbAdapter.interfaces) { iface in
                             if let adapter = viewModel.adapterForInterface(iface) {
                                 InterfaceSection(
@@ -30,8 +30,14 @@ struct PortsView: View {
                                 )
                             }
                         }
-                        Button("Refresh") { viewModel.refreshPorts() }
-                            .font(.caption)
+                    } header: {
+                        HStack {
+                            Text("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)")
+                            Spacer()
+                            Button { viewModel.refreshPorts() } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                        }
                     }
                 }
             }
@@ -113,19 +119,13 @@ struct InterfaceSection: View {
                 Spacer()
 
                 Button { onCloseCAN() } label: {
-                    Label("Close CAN", systemImage: "stop.fill")
+                    Label("Close", systemImage: "stop.fill")
                 }
                 .foregroundColor(.orange)
                 .font(.caption)
-
-                Button("Disconnect") { adapter.disconnect() }
-                    .foregroundColor(.red)
-                    .font(.caption)
             } else {
-                Button { onOpenCAN() } label: {
-                    Label("Open CAN", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
+                Button("Open") { onOpenCAN() }
+                    .buttonStyle(.borderedProminent)
 
                 Spacer()
 
