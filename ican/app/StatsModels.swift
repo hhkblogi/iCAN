@@ -42,9 +42,16 @@ struct BandwidthTestStats {
     var dbgMsgsParsed: Int = 0
     var dbgHeadHex: String = ""        // hex dump of first 48 bytes
 
+    // Sequence-verified delivery from FlightWindow
+    var seqDeliveryRate: Double = -1.0
+    var deliveryReaped: UInt64 = 0       // frames past grace window (verified)
+    var deliveryConfirmed: UInt64 = 0    // of those, confirmed received
+    var deliveryTimedOut: UInt64 { deliveryReaped - deliveryConfirmed }
+
     // Instantaneous per-second rates (updated every ~1s from drainPerSecondCounters)
     var instantTxRate: Double = 0
     var instantRxRate: Double = 0
+    var instantSeqGaps: Double = 0  // per-second missing sequence numbers
     var instantTxBandwidth: Double = 0
     var instantRxBandwidth: Double = 0
     var txRate: Double { instantTxRate }
@@ -67,8 +74,12 @@ struct BandwidthTestStats {
         bytesReceived = 0
         startTime = nil
         duration = 0
+        seqDeliveryRate = -1.0
+        deliveryReaped = 0
+        deliveryConfirmed = 0
         instantTxRate = 0
         instantRxRate = 0
+        instantSeqGaps = 0
         instantTxBandwidth = 0
         instantRxBandwidth = 0
         rxPolls = 0

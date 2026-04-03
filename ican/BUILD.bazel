@@ -33,6 +33,7 @@ objc_library(
     hdrs = [
         "iCAN-Bridging-Header.h",
         "perf/DashboardMetricsEngine.hpp",
+        "perf/FlightWindow.hpp",
         "perf/MetricsEngine.hpp",
         "perf/TestEngines.hpp",
     ],
@@ -60,4 +61,22 @@ swift_library(
     tags = ["manual"],
     deps = [":iCANObjC"],
     visibility = ["//visibility:public"],
+)
+
+# Header-only FlightWindow library (for tests)
+cc_library(
+    name = "flight_window",
+    hdrs = ["perf/FlightWindow.hpp"],
+    includes = ["perf"],
+)
+
+# Unit tests for FlightWindow lock-free delivery tracker
+cc_test(
+    name = "flight_window_test",
+    srcs = ["perf/FlightWindow_test.cpp"],
+    copts = ["-std=c++23"],
+    deps = [
+        ":flight_window",
+        "@googletest//:gtest_main",
+    ],
 )

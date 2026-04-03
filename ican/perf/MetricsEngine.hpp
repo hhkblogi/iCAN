@@ -28,6 +28,7 @@ struct RateCounters {
     uint32_t txBytes;
     uint32_t rx;
     uint32_t rxBytes;
+    uint32_t seqGaps;    // per-second sequence gaps (missing frames)
 };
 
 class MetricsEngineImpl;

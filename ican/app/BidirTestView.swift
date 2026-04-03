@@ -258,10 +258,16 @@ struct BidirTestView: View {
                             Divider()
                             BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantTxRate), color: .primary)
                             BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantRxRate), color: .primary)
-                            let dr1 = viewModel.bidirStats.a1toA2.instantTxRate > 0 ? min((viewModel.bidirStats.a1toA2.instantRxRate / viewModel.bidirStats.a1toA2.instantTxRate) * 100, 100) : .zero
-                            BidirStatRow(label: "Delivery", value: String(format: "%.1f%%", dr1), color: dr1 > 99 ? .green : .orange)
+                            // Sequence-verified delivery from FlightWindow
+                            let dr1 = viewModel.bidirStats.a1toA2.seqDeliveryRate
+                            let dr1Str = dr1 < 0 ? "---" : String(format: "%.2f%%", dr1)
+                            let dr1Color: Color = dr1 < 0 ? .secondary : (dr1 > 99.9 ? .green : .orange)
+                            BidirStatRow(label: "Delivery", value: dr1Str, color: dr1Color)
                             BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a1toA2.messagesSent)", color: .secondary)
                             BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a1toA2.messagesReceived)", color: .secondary)
+                            let t1 = viewModel.bidirStats.a1toA2.deliveryTimedOut
+                            BidirStatRow(label: "Missed", value: t1 > 0 ? "\(t1)" : "0", color: t1 > 0 ? .red : .secondary,
+                                        info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -277,10 +283,16 @@ struct BidirTestView: View {
                             Divider()
                             BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantTxRate), color: .primary)
                             BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantRxRate), color: .primary)
-                            let dr2 = viewModel.bidirStats.a2toA1.instantTxRate > 0 ? min((viewModel.bidirStats.a2toA1.instantRxRate / viewModel.bidirStats.a2toA1.instantTxRate) * 100, 100) : .zero
-                            BidirStatRow(label: "Delivery", value: String(format: "%.1f%%", dr2), color: dr2 > 99 ? .green : .orange)
+                            // Sequence-verified delivery from FlightWindow
+                            let dr2 = viewModel.bidirStats.a2toA1.seqDeliveryRate
+                            let dr2Str = dr2 < 0 ? "---" : String(format: "%.2f%%", dr2)
+                            let dr2Color: Color = dr2 < 0 ? .secondary : (dr2 > 99.9 ? .green : .orange)
+                            BidirStatRow(label: "Delivery", value: dr2Str, color: dr2Color)
                             BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a2toA1.messagesSent)", color: .secondary)
                             BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a2toA1.messagesReceived)", color: .secondary)
+                            let t2 = viewModel.bidirStats.a2toA1.deliveryTimedOut
+                            BidirStatRow(label: "Missed", value: t2 > 0 ? "\(t2)" : "0", color: t2 > 0 ? .red : .secondary,
+                                        info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -310,38 +322,52 @@ struct BidirTestView: View {
 
                     // Delivery
                     DiagRow(label: "Cumul Delivery", valA: String(format: "%.2f%%", cd1), valB: String(format: "%.2f%%", cd2),
-                            colorA: cd1 > 99.9 ? .green : .orange, colorB: cd2 > 99.9 ? .green : .orange)
+                            colorA: cd1 > 99.9 ? .green : .orange, colorB: cd2 > 99.9 ? .green : .orange,
+                            info: "Cumulative delivery rate: received / sent × 100%. Measures total frame delivery over the entire test duration.")
                     DiagRow(label: "Seq Gaps", valA: "\(s1.rxSequenceGaps)", valB: "\(s2.rxSequenceGaps)",
-                            colorA: s1.rxSequenceGaps > 0 ? .red : .secondary, colorB: s2.rxSequenceGaps > 0 ? .red : .secondary)
+                            colorA: s1.rxSequenceGaps > 0 ? .red : .secondary, colorB: s2.rxSequenceGaps > 0 ? .red : .secondary,
+                            info: "Number of missing sequence numbers detected in received frames. Each gap indicates one or more frames were lost between sender and receiver.")
                     Divider()
 
                     // IPC
-                    DiagRow(label: "RX Polls", valA: "\(s1.rxPolls)", valB: "\(s2.rxPolls)")
+                    DiagRow(label: "RX Polls", valA: "\(s1.rxPolls)", valB: "\(s2.rxPolls)",
+                            info: "Total calls to readManyBlocking() by the test engine. Each poll attempts to drain frames from the shared ring buffer.")
                     DiagRow(label: "RX Hits", valA: "\(s1.rxHits)", valB: "\(s2.rxHits)",
-                            colorA: s1.rxHits > 0 ? .green : .red, colorB: s2.rxHits > 0 ? .green : .red)
+                            colorA: s1.rxHits > 0 ? .green : .red, colorB: s2.rxHits > 0 ? .green : .red,
+                            info: "Polls that returned at least one frame. Low hit rate relative to polls indicates the reader is polling faster than data arrives.")
                     DiagRow(label: "RX Raw Bytes", valA: "\(s1.rxRawBytes)", valB: "\(s2.rxRawBytes)")
                     DiagRow(label: "Decode Failures", valA: "\(s1.rxDecodeFailures)", valB: "\(s2.rxDecodeFailures)",
-                            colorA: s1.rxDecodeFailures > 0 ? .red : .secondary, colorB: s2.rxDecodeFailures > 0 ? .red : .secondary)
+                            colorA: s1.rxDecodeFailures > 0 ? .red : .secondary, colorB: s2.rxDecodeFailures > 0 ? .red : .secondary,
+                            info: "Frames that failed CAN protocol decoding. Indicates corrupted data in the USB transfer or codec bug.")
                     DiagRow(label: "Bytes Sent", valA: "\(s1.bytesSent)", valB: "\(s2.bytesSent)")
                     DiagRow(label: "Bytes Recv", valA: "\(s1.bytesReceived)", valB: "\(s2.bytesReceived)")
                     DiagRow(label: "Out of Order", valA: "\(s1.rxOutOfOrder)", valB: "\(s2.rxOutOfOrder)",
-                            colorA: s1.rxOutOfOrder > 0 ? .orange : .secondary, colorB: s2.rxOutOfOrder > 0 ? .orange : .secondary)
+                            colorA: s1.rxOutOfOrder > 0 ? .orange : .secondary, colorB: s2.rxOutOfOrder > 0 ? .orange : .secondary,
+                            info: "Frames received with a sequence number lower than the previous frame. Indicates USB completion reordering or ring buffer race.")
                     DiagRow(label: "Duplicates", valA: "\(s1.rxDuplicates)", valB: "\(s2.rxDuplicates)",
-                            colorA: s1.rxDuplicates > 0 ? .orange : .secondary, colorB: s2.rxDuplicates > 0 ? .orange : .secondary)
+                            colorA: s1.rxDuplicates > 0 ? .orange : .secondary, colorB: s2.rxDuplicates > 0 ? .orange : .secondary,
+                            info: "Frames received with the same sequence number as the previous frame. May indicate USB retransmission or codec echo.")
                     Divider()
 
                     // Driver
-                    DiagRow(label: "ReadComplete", valA: "\(s1.driverReadCompleteCount)", valB: "\(s2.driverReadCompleteCount)")
-                    DiagRow(label: "USB IN Bytes", valA: "\(s1.driverReadCompleteBytes)", valB: "\(s2.driverReadCompleteBytes)")
+                    DiagRow(label: "ReadComplete", valA: "\(s1.driverReadCompleteCount)", valB: "\(s2.driverReadCompleteCount)",
+                            info: "USB read completions processed by the DriverKit extension (ReadCompleteBundled). Each completion delivers one USB transfer worth of CAN data.")
+                    DiagRow(label: "USB IN Bytes", valA: "\(s1.driverReadCompleteBytes)", valB: "\(s2.driverReadCompleteBytes)",
+                            info: "Total bytes received from USB IN endpoint across all read completions.")
                     DiagRow(label: "Submit Fail", valA: "\(s1.driverReadSubmitFailures)", valB: "\(s2.driverReadSubmitFailures)",
-                            colorA: s1.driverReadSubmitFailures > 0 ? .red : .secondary, colorB: s2.driverReadSubmitFailures > 0 ? .red : .secondary)
+                            colorA: s1.driverReadSubmitFailures > 0 ? .red : .secondary, colorB: s2.driverReadSubmitFailures > 0 ? .red : .secondary,
+                            info: "Failed attempts to resubmit USB read buffers. Indicates the driver couldn't keep up with USB completions, causing temporary RX gaps.")
                     DiagRow(label: "RX Slots InFlight", valA: "\(s1.driverRxSlotsInFlight)", valB: "\(s2.driverRxSlotsInFlight)",
-                            colorA: s1.driverRxSlotsInFlight > 0 ? .green : .red, colorB: s2.driverRxSlotsInFlight > 0 ? .green : .red)
-                    DiagRow(label: "TX Busy", valA: "\(s1.driverTxBusyCount)", valB: "\(s2.driverTxBusyCount)")
+                            colorA: s1.driverRxSlotsInFlight > 0 ? .green : .red, colorB: s2.driverRxSlotsInFlight > 0 ? .green : .red,
+                            info: "USB read buffers currently submitted to the USB host controller, waiting for data. Should be >0 during active reception.")
+                    DiagRow(label: "TX Busy", valA: "\(s1.driverTxBusyCount)", valB: "\(s2.driverTxBusyCount)",
+                            info: "Times the driver's TX path was busy when a new write was attempted. High count may indicate USB OUT endpoint backpressure.")
                     DiagRow(label: "Chain Restarts", valA: "\(s1.driverReadChainRestarts)", valB: "\(s2.driverReadChainRestarts)",
-                            colorA: s1.driverReadChainRestarts > 0 ? .orange : .secondary, colorB: s2.driverReadChainRestarts > 0 ? .orange : .secondary)
+                            colorA: s1.driverReadChainRestarts > 0 ? .orange : .secondary, colorB: s2.driverReadChainRestarts > 0 ? .orange : .secondary,
+                            info: "Times the USB read chain was restarted after all slots completed without resubmission. Indicates a brief RX gap.")
                     DiagRow(label: "Ring RX Drop", valA: "\(s1.ringRxDropped)", valB: "\(s2.ringRxDropped)",
-                            colorA: s1.ringRxDropped > 0 ? .red : .secondary, colorB: s2.ringRxDropped > 0 ? .red : .secondary)
+                            colorA: s1.ringRxDropped > 0 ? .red : .secondary, colorB: s2.ringRxDropped > 0 ? .red : .secondary,
+                            info: "Frames dropped because the shared RX ring buffer was full. The app wasn't draining fast enough to keep up with the driver.")
 
                     // Codec-specific (per-interface)
                     let codecA = codecForAdapter(viewModel.bidirAdapterA)
@@ -353,27 +379,32 @@ struct BidirTestView: View {
                                 valA: codecA == "pcan" ? "\(s1.codecEchoCount)" : "—",
                                 valB: codecB == "pcan" ? "\(s2.codecEchoCount)" : "—",
                                 colorA: s1.codecEchoCount > 0 ? .blue : .secondary,
-                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary)
+                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary,
+                                info: "TX echo frames filtered by the PCAN codec. The firmware echoes transmitted frames back; these are counted but not delivered to the app.")
                         DiagRow(label: "FW Overruns",
                                 valA: codecA == "pcan" ? "\(s1.codecOverrunCount)" : "—",
                                 valB: codecB == "pcan" ? "\(s2.codecOverrunCount)" : "—",
                                 colorA: s1.codecOverrunCount > 0 ? .red : .secondary,
-                                colorB: s2.codecOverrunCount > 0 ? .red : .secondary)
+                                colorB: s2.codecOverrunCount > 0 ? .red : .secondary,
+                                info: "PCAN firmware FIFO overrun events. The adapter's internal buffer overflowed, causing frame loss at the hardware level.")
                         DiagRow(label: "Truncated",
                                 valA: codecA == "pcan" ? "\(s1.codecTruncatedCount)" : "—",
                                 valB: codecB == "pcan" ? "\(s2.codecTruncatedCount)" : "—",
                                 colorA: s1.codecTruncatedCount > 0 ? .orange : .secondary,
-                                colorB: s2.codecTruncatedCount > 0 ? .orange : .secondary)
+                                colorB: s2.codecTruncatedCount > 0 ? .orange : .secondary,
+                                info: "PCAN TLV messages truncated at USB slot boundary. The message was split across USB transfers and couldn't be fully parsed.")
                         DiagRow(label: "Zero Sentinel",
                                 valA: codecA == "pcan" ? "\(s1.codecZeroSentinelCount)" : "—",
-                                valB: codecB == "pcan" ? "\(s2.codecZeroSentinelCount)" : "—")
+                                valB: codecB == "pcan" ? "\(s2.codecZeroSentinelCount)" : "—",
+                                info: "Zero-size end-of-stream markers in PCAN TLV data. Normal protocol framing — indicates end of messages in a USB transfer.")
                     }
                     if codecA == "gs_usb" || codecB == "gs_usb" {
                         DiagRow(label: "Echo Frames",
                                 valA: codecA == "gs_usb" ? "\(s1.codecEchoCount)" : "—",
                                 valB: codecB == "gs_usb" ? "\(s2.codecEchoCount)" : "—",
                                 colorA: s1.codecEchoCount > 0 ? .blue : .secondary,
-                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary)
+                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary,
+                                info: "TX echo frames received from the gs_usb firmware. Used for flow control — each echo confirms a transmitted frame was sent on the bus.")
                     }
                 }
                 .padding()
@@ -397,13 +428,34 @@ struct DiagRow: View {
     var colorA: Color = .secondary
     var colorB: Color = .secondary
     var header: Bool = false
+    var info: String? = nil
+    @State private var showInfo = false
 
     var body: some View {
         HStack(spacing: 0) {
-            Text(label)
-                .font(header ? .caption.bold() : .caption)
-                .foregroundColor(header ? .primary : .secondary)
-                .frame(width: 140, alignment: .leading)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(header ? .caption.bold() : .caption)
+                    .foregroundColor(header ? .primary : .secondary)
+                if let info {
+                    Button {
+                        showInfo.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showInfo) {
+                        Text(info)
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding()
+                            .frame(width: 280)
+                    }
+                }
+            }
+            .frame(width: 160, alignment: .leading)
             Text(valA)
                 .font(.system(header ? .caption : .caption, design: .monospaced))
                 .fontWeight(header ? .bold : .medium)
@@ -424,12 +476,33 @@ struct BidirStatRow: View {
     let label: String
     let value: String
     let color: Color
+    var info: String? = nil
+    @State private var showInfo = false
 
     var body: some View {
         HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let info {
+                    Button {
+                        showInfo.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showInfo) {
+                        Text(info)
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding()
+                            .frame(width: 280)
+                    }
+                }
+            }
             Spacer()
             Text(value)
                 .font(.system(.caption, design: .monospaced))

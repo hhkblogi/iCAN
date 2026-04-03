@@ -572,8 +572,16 @@ class CANDashboardViewModel: ObservableObject {
                     let p2 = self.bidirEngine.drainPerSecondCountersA2toA1()
                     self.bidirStats.a1toA2.instantTxRate = Double(p1.tx) / elapsed
                     self.bidirStats.a1toA2.instantRxRate = Double(p1.rx) / elapsed
+                    self.bidirStats.a1toA2.instantSeqGaps = Double(p1.seqGaps) / elapsed
+                    self.bidirStats.a1toA2.seqDeliveryRate = self.bidirEngine.deliveryRateA1toA2()
+                    self.bidirStats.a1toA2.deliveryReaped = self.bidirEngine.deliveryReapedA1toA2()
+                    self.bidirStats.a1toA2.deliveryConfirmed = self.bidirEngine.deliveryConfirmedA1toA2()
                     self.bidirStats.a2toA1.instantTxRate = Double(p2.tx) / elapsed
                     self.bidirStats.a2toA1.instantRxRate = Double(p2.rx) / elapsed
+                    self.bidirStats.a2toA1.instantSeqGaps = Double(p2.seqGaps) / elapsed
+                    self.bidirStats.a2toA1.seqDeliveryRate = self.bidirEngine.deliveryRateA2toA1()
+                    self.bidirStats.a2toA1.deliveryReaped = self.bidirEngine.deliveryReapedA2toA1()
+                    self.bidirStats.a2toA1.deliveryConfirmed = self.bidirEngine.deliveryConfirmedA2toA1()
 
                     self.bidirHistory.append(BidirHistoryPoint(
                         timestamp: now,
