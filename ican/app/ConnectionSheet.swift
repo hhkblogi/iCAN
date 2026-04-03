@@ -45,8 +45,10 @@ struct PortsView: View {
             }
 
             // Diagnostic Section
-            Section("Driver Diagnostics") {
-                DiagnosticView()
+            Section {
+                DisclosureGroup("Driver Diagnostics") {
+                    DiagnosticView()
+                }
             }
         }
     }
