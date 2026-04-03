@@ -42,6 +42,19 @@ public:
     BandwidthSnapshot snapshotA2toA1();
     RateCounters drainPerSecondCountersA1toA2();
     RateCounters drainPerSecondCountersA2toA1();
+    double deliveryRateA1toA2();
+    double deliveryRateA2toA1();
+    uint64_t deliveryReapedA1toA2();
+    uint64_t deliveryConfirmedA1toA2();
+    uint64_t deliveryReapedA2toA1();
+    uint64_t deliveryConfirmedA2toA1();
+    // Debug: RX call counts and rejection reasons
+    uint64_t deliveryRxCallsA1toA2();
+    uint64_t deliveryRxCallsA2toA1();
+    uint64_t deliveryRxStaleA1toA2();
+    uint64_t deliveryRxStaleA2toA1();
+    uint64_t deliveryRxReapedA1toA2();
+    uint64_t deliveryRxReapedA2toA1();
 private:
     std::shared_ptr<BidirTestEngineImpl> _impl;
 };

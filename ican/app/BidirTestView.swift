@@ -7,6 +7,13 @@ struct BidirTestView: View {
     private var interfaceAIsOpen: Bool { viewModel.bidirAdapterA?.isCANOpen ?? false }
     private var interfaceBIsOpen: Bool { viewModel.bidirAdapterB?.isCANOpen ?? false }
 
+    private func codecForAdapter(_ adapter: SerialAdapter?) -> String {
+        guard let adapter = adapter,
+              let iface = viewModel.availableInterfaces.first(where: { $0.id == adapter.selectedPort })
+        else { return "" }
+        return iface.codec
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -226,8 +233,8 @@ struct BidirTestView: View {
                     .padding(.horizontal)
                 }
 
-                // Live Statistics — Two-column layout
-                VStack(alignment: .leading, spacing: 16) {
+                // Live Statistics — table layout matching Diagnostics
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Live Statistics")
                             .font(.headline)
@@ -240,62 +247,42 @@ struct BidirTestView: View {
                             .monospacedDigit()
                     }
 
-                    // Two-column: A1→A2 (blue) | A2→A1 (orange)
-                    HStack(alignment: .top, spacing: 16) {
-                        // Left column: A1 → A2
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Circle().fill(.blue).frame(width: 10, height: 10)
-                                Text("A1 → A2 (0x200)").font(.headline)
-                            }
-                            Divider()
-                            BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantTxRate), color: .primary)
-                            BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantRxRate), color: .primary)
-                            let dr1 = viewModel.bidirStats.a1toA2.instantTxRate > 0 ? min((viewModel.bidirStats.a1toA2.instantRxRate / viewModel.bidirStats.a1toA2.instantTxRate) * 100, 100) : .zero
-                            BidirStatRow(label: "Delivery", value: String(format: "%.1f%%", dr1), color: dr1 > 99 ? .green : .orange)
+                    let s1 = viewModel.bidirStats.a1toA2
+                    let s2 = viewModel.bidirStats.a2toA1
 
-                            Divider()
-                            BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a1toA2.messagesSent)", color: .secondary)
-                            BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a1toA2.messagesReceived)", color: .secondary)
-                            let cd1 = viewModel.bidirStats.a1toA2.messagesSent > 0 ? min(Double(viewModel.bidirStats.a1toA2.messagesReceived) / Double(viewModel.bidirStats.a1toA2.messagesSent) * 100, 100) : .zero
-                            BidirStatRow(label: "Cumul Delivery", value: String(format: "%.2f%%", cd1), color: cd1 > 99.9 ? .green : .orange)
+                    // Header
+                    DiagRow(label: "", valA: "A → B", valB: "B → A", header: true)
+                    Divider()
 
-                            if viewModel.bidirStats.a1toA2.rxSequenceGaps > 0 {
-                                BidirStatRow(label: "Seq Gaps", value: "\(viewModel.bidirStats.a1toA2.rxSequenceGaps)", color: .red)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue.opacity(0.05))
-                        .cornerRadius(12)
+                    DiagRow(label: "TX Rate",
+                            valA: String(format: "%.0f msg/s", s1.instantTxRate),
+                            valB: String(format: "%.0f msg/s", s2.instantTxRate))
+                    DiagRow(label: "RX Rate",
+                            valA: String(format: "%.0f msg/s", s1.instantRxRate),
+                            valB: String(format: "%.0f msg/s", s2.instantRxRate))
 
-                        // Right column: A2 → A1
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Circle().fill(.orange).frame(width: 10, height: 10)
-                                Text("A2 → A1 (0x201)").font(.headline)
-                            }
-                            Divider()
-                            BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantTxRate), color: .primary)
-                            BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantRxRate), color: .primary)
-                            let dr2 = viewModel.bidirStats.a2toA1.instantTxRate > 0 ? min((viewModel.bidirStats.a2toA1.instantRxRate / viewModel.bidirStats.a2toA1.instantTxRate) * 100, 100) : .zero
-                            BidirStatRow(label: "Delivery", value: String(format: "%.1f%%", dr2), color: dr2 > 99 ? .green : .orange)
+                    let dr1 = s1.seqDeliveryRate
+                    let dr2 = s2.seqDeliveryRate
+                    DiagRow(label: "Delivery",
+                            valA: dr1 < 0 ? "---" : String(format: "%.2f%%", dr1),
+                            valB: dr2 < 0 ? "---" : String(format: "%.2f%%", dr2),
+                            colorA: dr1 < 0 ? .secondary : (dr1 > 99.9 ? .green : .orange),
+                            colorB: dr2 < 0 ? .secondary : (dr2 > 99.9 ? .green : .orange))
+                    DiagRow(label: "Sent",
+                            valA: "\(s1.messagesSent)",
+                            valB: "\(s2.messagesSent)")
+                    DiagRow(label: "Recv",
+                            valA: "\(s1.messagesReceived)",
+                            valB: "\(s2.messagesReceived)")
 
-                            Divider()
-                            BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a2toA1.messagesSent)", color: .secondary)
-                            BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a2toA1.messagesReceived)", color: .secondary)
-                            let cd2 = viewModel.bidirStats.a2toA1.messagesSent > 0 ? min(Double(viewModel.bidirStats.a2toA1.messagesReceived) / Double(viewModel.bidirStats.a2toA1.messagesSent) * 100, 100) : .zero
-                            BidirStatRow(label: "Cumul Delivery", value: String(format: "%.2f%%", cd2), color: cd2 > 99.9 ? .green : .orange)
-
-                            if viewModel.bidirStats.a2toA1.rxSequenceGaps > 0 {
-                                BidirStatRow(label: "Seq Gaps", value: "\(viewModel.bidirStats.a2toA1.rxSequenceGaps)", color: .red)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange.opacity(0.05))
-                        .cornerRadius(12)
-                    }
+                    let t1 = s1.deliveryTimedOut
+                    let t2 = s2.deliveryTimedOut
+                    DiagRow(label: "Missed",
+                            valA: t1 > 0 ? "\(t1)" : "0",
+                            valB: t2 > 0 ? "\(t2)" : "0",
+                            colorA: t1 > 0 ? .red : .secondary,
+                            colorB: t2 > 0 ? .red : .secondary,
+                            info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
                 }
                 .padding()
                 .background(Color.platformBackground)
@@ -303,178 +290,102 @@ struct BidirTestView: View {
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                 .padding(.horizontal)
 
-                // Diagnostics (collapsible)
-                VStack(alignment: .leading, spacing: 16) {
-                    DisclosureGroup("Diagnostics") {
-                        HStack(alignment: .top, spacing: 16) {
-                            // Left column: A1 → A2 diagnostics
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 6) {
-                                    Circle().fill(.blue).frame(width: 8, height: 8)
-                                    Text("A1 → A2").font(.subheadline).fontWeight(.medium)
-                                }
-                                BidirStatRow(label: "RX Polls", value: "\(viewModel.bidirStats.a1toA2.rxPolls)", color: .secondary)
-                                BidirStatRow(label: "RX Hits", value: "\(viewModel.bidirStats.a1toA2.rxHits)", color: viewModel.bidirStats.a1toA2.rxHits > 0 ? .green : .red)
-                                BidirStatRow(label: "RX Raw Bytes", value: "\(viewModel.bidirStats.a1toA2.rxRawBytes)", color: .secondary)
-                                BidirStatRow(label: "Decode Failures", value: "\(viewModel.bidirStats.a1toA2.rxDecodeFailures)", color: viewModel.bidirStats.a1toA2.rxDecodeFailures > 0 ? .red : .secondary)
-                                BidirStatRow(label: "Bytes Sent", value: "\(viewModel.bidirStats.a1toA2.bytesSent)", color: .secondary)
-                                BidirStatRow(label: "Bytes Recv", value: "\(viewModel.bidirStats.a1toA2.bytesReceived)", color: .secondary)
-                                BidirStatRow(label: "Out of Order", value: "\(viewModel.bidirStats.a1toA2.rxOutOfOrder)", color: viewModel.bidirStats.a1toA2.rxOutOfOrder > 0 ? .orange : .secondary)
-                                BidirStatRow(label: "Duplicates", value: "\(viewModel.bidirStats.a1toA2.rxDuplicates)", color: viewModel.bidirStats.a1toA2.rxDuplicates > 0 ? .orange : .secondary)
-                                Divider()
-                                Text("Driver (A2 RX)").font(.caption).foregroundColor(.secondary)
-                                BidirStatRow(label: "ReadComplete", value: "\(viewModel.bidirStats.a1toA2.driverReadCompleteCount)", color: .secondary)
-                                BidirStatRow(label: "USB IN Bytes", value: "\(viewModel.bidirStats.a1toA2.driverReadCompleteBytes)", color: .secondary)
-                                BidirStatRow(label: "Submit Fail", value: "\(viewModel.bidirStats.a1toA2.driverReadSubmitFailures)", color: viewModel.bidirStats.a1toA2.driverReadSubmitFailures > 0 ? .red : .secondary)
-                                BidirStatRow(label: "RX Slots InFlight", value: "\(viewModel.bidirStats.a1toA2.driverRxSlotsInFlight)", color: viewModel.bidirStats.a1toA2.driverRxSlotsInFlight > 0 ? .green : .red)
-                                BidirStatRow(label: "TX Busy", value: "\(viewModel.bidirStats.a1toA2.driverTxBusyCount)", color: .secondary)
-                                BidirStatRow(label: "Chain Restarts", value: "\(viewModel.bidirStats.a1toA2.driverReadChainRestarts)", color: viewModel.bidirStats.a1toA2.driverReadChainRestarts > 0 ? .orange : .secondary)
-                                Divider()
-                                Text("PCAN Codec").font(.caption).foregroundColor(.secondary)
-                                BidirStatRow(label: "TX Echoes", value: "\(viewModel.bidirStats.a1toA2.codecEchoCount)", color: viewModel.bidirStats.a1toA2.codecEchoCount > 0 ? .blue : .secondary)
-                                BidirStatRow(label: "FW Overruns", value: "\(viewModel.bidirStats.a1toA2.codecOverrunCount)", color: viewModel.bidirStats.a1toA2.codecOverrunCount > 0 ? .red : .secondary)
-                                BidirStatRow(label: "Truncated", value: "\(viewModel.bidirStats.a1toA2.codecTruncatedCount)", color: viewModel.bidirStats.a1toA2.codecTruncatedCount > 0 ? .orange : .secondary)
-                                BidirStatRow(label: "Zero Sentinel", value: "\(viewModel.bidirStats.a1toA2.codecZeroSentinelCount)", color: .secondary)
-                                BidirStatRow(label: "Ring RX Drop", value: "\(viewModel.bidirStats.a1toA2.ringRxDropped)", color: viewModel.bidirStats.a1toA2.ringRxDropped > 0 ? .red : .secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue.opacity(0.05))
-                            .cornerRadius(12)
+                // Diagnostics — table layout
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Diagnostics")
+                        .font(.headline)
 
-                            // Right column: A2 → A1 diagnostics
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 6) {
-                                    Circle().fill(.orange).frame(width: 8, height: 8)
-                                    Text("A2 → A1").font(.subheadline).fontWeight(.medium)
-                                }
-                                BidirStatRow(label: "RX Polls", value: "\(viewModel.bidirStats.a2toA1.rxPolls)", color: .secondary)
-                                BidirStatRow(label: "RX Hits", value: "\(viewModel.bidirStats.a2toA1.rxHits)", color: viewModel.bidirStats.a2toA1.rxHits > 0 ? .green : .red)
-                                BidirStatRow(label: "RX Raw Bytes", value: "\(viewModel.bidirStats.a2toA1.rxRawBytes)", color: .secondary)
-                                BidirStatRow(label: "Decode Failures", value: "\(viewModel.bidirStats.a2toA1.rxDecodeFailures)", color: viewModel.bidirStats.a2toA1.rxDecodeFailures > 0 ? .red : .secondary)
-                                BidirStatRow(label: "Bytes Sent", value: "\(viewModel.bidirStats.a2toA1.bytesSent)", color: .secondary)
-                                BidirStatRow(label: "Bytes Recv", value: "\(viewModel.bidirStats.a2toA1.bytesReceived)", color: .secondary)
-                                BidirStatRow(label: "Out of Order", value: "\(viewModel.bidirStats.a2toA1.rxOutOfOrder)", color: viewModel.bidirStats.a2toA1.rxOutOfOrder > 0 ? .orange : .secondary)
-                                BidirStatRow(label: "Duplicates", value: "\(viewModel.bidirStats.a2toA1.rxDuplicates)", color: viewModel.bidirStats.a2toA1.rxDuplicates > 0 ? .orange : .secondary)
-                                Divider()
-                                Text("Driver (A1 RX)").font(.caption).foregroundColor(.secondary)
-                                BidirStatRow(label: "ReadComplete", value: "\(viewModel.bidirStats.a2toA1.driverReadCompleteCount)", color: .secondary)
-                                BidirStatRow(label: "USB IN Bytes", value: "\(viewModel.bidirStats.a2toA1.driverReadCompleteBytes)", color: .secondary)
-                                BidirStatRow(label: "Submit Fail", value: "\(viewModel.bidirStats.a2toA1.driverReadSubmitFailures)", color: viewModel.bidirStats.a2toA1.driverReadSubmitFailures > 0 ? .red : .secondary)
-                                BidirStatRow(label: "RX Slots InFlight", value: "\(viewModel.bidirStats.a2toA1.driverRxSlotsInFlight)", color: viewModel.bidirStats.a2toA1.driverRxSlotsInFlight > 0 ? .green : .red)
-                                BidirStatRow(label: "TX Busy", value: "\(viewModel.bidirStats.a2toA1.driverTxBusyCount)", color: .secondary)
-                                BidirStatRow(label: "Chain Restarts", value: "\(viewModel.bidirStats.a2toA1.driverReadChainRestarts)", color: viewModel.bidirStats.a2toA1.driverReadChainRestarts > 0 ? .orange : .secondary)
-                                Divider()
-                                Text("PCAN Codec").font(.caption).foregroundColor(.secondary)
-                                BidirStatRow(label: "TX Echoes", value: "\(viewModel.bidirStats.a2toA1.codecEchoCount)", color: viewModel.bidirStats.a2toA1.codecEchoCount > 0 ? .blue : .secondary)
-                                BidirStatRow(label: "FW Overruns", value: "\(viewModel.bidirStats.a2toA1.codecOverrunCount)", color: viewModel.bidirStats.a2toA1.codecOverrunCount > 0 ? .red : .secondary)
-                                BidirStatRow(label: "Truncated", value: "\(viewModel.bidirStats.a2toA1.codecTruncatedCount)", color: viewModel.bidirStats.a2toA1.codecTruncatedCount > 0 ? .orange : .secondary)
-                                BidirStatRow(label: "Zero Sentinel", value: "\(viewModel.bidirStats.a2toA1.codecZeroSentinelCount)", color: .secondary)
-                                BidirStatRow(label: "Ring RX Drop", value: "\(viewModel.bidirStats.a2toA1.ringRxDropped)", color: viewModel.bidirStats.a2toA1.ringRxDropped > 0 ? .red : .secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.orange.opacity(0.05))
-                            .cornerRadius(12)
-                        }
+                    let s1 = viewModel.bidirStats.a1toA2
+                    let s2 = viewModel.bidirStats.a2toA1
+                    let cd1 = s1.messagesSent > 0 ? min(Double(s1.messagesReceived) / Double(s1.messagesSent) * 100, 100) : 0
+                    let cd2 = s2.messagesSent > 0 ? min(Double(s2.messagesReceived) / Double(s2.messagesSent) * 100, 100) : 0
+
+                    // Header
+                    DiagRow(label: "", valA: "A → B", valB: "B → A", header: true)
+                    Divider()
+
+                    // Delivery
+                    DiagRow(label: "Cumul Delivery", valA: String(format: "%.2f%%", cd1), valB: String(format: "%.2f%%", cd2),
+                            colorA: cd1 > 99.9 ? .green : .orange, colorB: cd2 > 99.9 ? .green : .orange,
+                            info: "Cumulative delivery rate: received / sent × 100%. Measures total frame delivery over the entire test duration.")
+                    DiagRow(label: "Seq Gaps", valA: "\(s1.rxSequenceGaps)", valB: "\(s2.rxSequenceGaps)",
+                            colorA: s1.rxSequenceGaps > 0 ? .red : .secondary, colorB: s2.rxSequenceGaps > 0 ? .red : .secondary,
+                            info: "Number of missing sequence numbers detected in received frames. Each gap indicates one or more frames were lost between sender and receiver.")
+                    DiagRow(label: "FW RxAcks", valA: "\(s1.deliveryRxCalls)", valB: "\(s2.deliveryRxCalls)",
+                            info: "Total onRxReceived() calls to FlightWindow. Should match Recv count if all frames have len≥8.")
+                    DiagRow(label: "FW Stale Rej", valA: "\(s1.deliveryRxStale)", valB: "\(s2.deliveryRxStale)",
+                            colorA: s1.deliveryRxStale > 0 ? .red : .secondary, colorB: s2.deliveryRxStale > 0 ? .red : .secondary,
+                            info: "Acks rejected because seq wrapped past bitmap capacity (head-seq > 16384).")
+                    DiagRow(label: "FW Reaped Rej", valA: "\(s1.deliveryRxReaped)", valB: "\(s2.deliveryRxReaped)",
+                            colorA: s1.deliveryRxReaped > 0 ? .orange : .secondary, colorB: s2.deliveryRxReaped > 0 ? .orange : .secondary,
+                            info: "Acks rejected because seq was already reaped (seq < base_seq). Frame arrived after the 2-second grace window expired.")
+                    Divider()
+
+                    // IPC
+                    DiagRow(label: "RX Polls", valA: "\(s1.rxPolls)", valB: "\(s2.rxPolls)",
+                            info: "Total calls to readManyBlocking() by the test engine. Each poll attempts to drain frames from the shared ring buffer.")
+                    DiagRow(label: "RX Hits", valA: "\(s1.rxHits)", valB: "\(s2.rxHits)",
+                            colorA: s1.rxHits > 0 ? .green : .red, colorB: s2.rxHits > 0 ? .green : .red,
+                            info: "Polls that returned at least one frame. Low hit rate relative to polls indicates the reader is polling faster than data arrives.")
+                    DiagRow(label: "RX Raw Bytes", valA: "\(s1.rxRawBytes)", valB: "\(s2.rxRawBytes)")
+                    DiagRow(label: "Decode Failures", valA: "\(s1.rxDecodeFailures)", valB: "\(s2.rxDecodeFailures)",
+                            colorA: s1.rxDecodeFailures > 0 ? .red : .secondary, colorB: s2.rxDecodeFailures > 0 ? .red : .secondary,
+                            info: "Frames that failed CAN protocol decoding. Indicates corrupted data in the USB transfer or codec bug.")
+                    DiagRow(label: "Bytes Sent", valA: "\(s1.bytesSent)", valB: "\(s2.bytesSent)")
+                    DiagRow(label: "Bytes Recv", valA: "\(s1.bytesReceived)", valB: "\(s2.bytesReceived)")
+                    DiagRow(label: "Out of Order", valA: "\(s1.rxOutOfOrder)", valB: "\(s2.rxOutOfOrder)",
+                            colorA: s1.rxOutOfOrder > 0 ? .orange : .secondary, colorB: s2.rxOutOfOrder > 0 ? .orange : .secondary,
+                            info: "Frames received with a sequence number lower than the previous frame. Indicates USB completion reordering or ring buffer race.")
+                    DiagRow(label: "Duplicates", valA: "\(s1.rxDuplicates)", valB: "\(s2.rxDuplicates)",
+                            colorA: s1.rxDuplicates > 0 ? .orange : .secondary, colorB: s2.rxDuplicates > 0 ? .orange : .secondary,
+                            info: "Frames received with the same sequence number as the previous frame. May indicate USB retransmission or codec echo.")
+                    DiagRow(label: "Ring RX Drop", valA: "\(s1.ringRxDropped)", valB: "\(s2.ringRxDropped)",
+                            colorA: s1.ringRxDropped > 0 ? .red : .secondary, colorB: s2.ringRxDropped > 0 ? .red : .secondary,
+                            info: "Frames dropped because the shared RX ring buffer was full. The app wasn't draining fast enough to keep up with the driver.")
+                    Divider()
+
+                    // Codec-specific (per-interface)
+                    let codecA = codecForAdapter(viewModel.bidirAdapterA)
+                    let codecB = codecForAdapter(viewModel.bidirAdapterB)
+                    DiagRow(label: "Codec", valA: codecA, valB: codecB, header: true)
+                    if codecA == "pcan" || codecB == "pcan" {
+                        DiagRow(label: "TX Echoes",
+                                valA: codecA == "pcan" ? "\(s1.codecEchoCount)" : "—",
+                                valB: codecB == "pcan" ? "\(s2.codecEchoCount)" : "—",
+                                colorA: s1.codecEchoCount > 0 ? .blue : .secondary,
+                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary,
+                                info: "TX echo frames filtered by the PCAN codec. The firmware echoes transmitted frames back; these are counted but not delivered to the app.")
+                        DiagRow(label: "FW Overruns",
+                                valA: codecA == "pcan" ? "\(s1.codecOverrunCount)" : "—",
+                                valB: codecB == "pcan" ? "\(s2.codecOverrunCount)" : "—",
+                                colorA: s1.codecOverrunCount > 0 ? .red : .secondary,
+                                colorB: s2.codecOverrunCount > 0 ? .red : .secondary,
+                                info: "PCAN firmware FIFO overrun events. The adapter's internal buffer overflowed, causing frame loss at the hardware level.")
+                        DiagRow(label: "Truncated",
+                                valA: codecA == "pcan" ? "\(s1.codecTruncatedCount)" : "—",
+                                valB: codecB == "pcan" ? "\(s2.codecTruncatedCount)" : "—",
+                                colorA: s1.codecTruncatedCount > 0 ? .orange : .secondary,
+                                colorB: s2.codecTruncatedCount > 0 ? .orange : .secondary,
+                                info: "PCAN TLV messages truncated at USB slot boundary. The message was split across USB transfers and couldn't be fully parsed.")
+                        DiagRow(label: "Zero Sentinel",
+                                valA: codecA == "pcan" ? "\(s1.codecZeroSentinelCount)" : "—",
+                                valB: codecB == "pcan" ? "\(s2.codecZeroSentinelCount)" : "—",
+                                info: "Zero-size end-of-stream markers in PCAN TLV data. Normal protocol framing — indicates end of messages in a USB transfer.")
                     }
-                    .font(.headline)
+                    if codecA == "gs_usb" || codecB == "gs_usb" {
+                        DiagRow(label: "Echo Frames",
+                                valA: codecA == "gs_usb" ? "\(s1.codecEchoCount)" : "—",
+                                valB: codecB == "gs_usb" ? "\(s2.codecEchoCount)" : "—",
+                                colorA: s1.codecEchoCount > 0 ? .blue : .secondary,
+                                colorB: s2.codecEchoCount > 0 ? .blue : .secondary,
+                                info: "TX echo frames received from the gs_usb firmware. Used for flow control — each echo confirms a transmitted frame was sent on the bus.")
+                    }
                 }
                 .padding()
                 .background(Color.platformBackground)
                 .cornerRadius(16)
                 .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
                 .padding(.horizontal)
-
-                // Raw USB Transfer Debug
-                VStack(alignment: .leading, spacing: 12) {
-                    DisclosureGroup("Raw USB Transfer (Live)") {
-                        HStack(alignment: .top, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) {
-                                    Circle().fill(.blue).frame(width: 8, height: 8)
-                                    Text("A2 RX (for A1→A2)").font(.subheadline).fontWeight(.medium)
-                                }
-                                Text("Transfer #\(viewModel.bidirStats.a1toA2.dbgTransferSeq)  len=\(viewModel.bidirStats.a1toA2.dbgTransferLen)  msgs=\(viewModel.bidirStats.a1toA2.dbgMsgsParsed)")
-                                    .font(.system(.caption, design: .monospaced))
-                                Text(viewModel.bidirStats.a1toA2.dbgHeadHex)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(nil)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(Color.blue.opacity(0.05))
-                            .cornerRadius(8)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) {
-                                    Circle().fill(.orange).frame(width: 8, height: 8)
-                                    Text("A1 RX (for A2→A1)").font(.subheadline).fontWeight(.medium)
-                                }
-                                Text("Transfer #\(viewModel.bidirStats.a2toA1.dbgTransferSeq)  len=\(viewModel.bidirStats.a2toA1.dbgTransferLen)  msgs=\(viewModel.bidirStats.a2toA1.dbgMsgsParsed)")
-                                    .font(.system(.caption, design: .monospaced))
-                                Text(viewModel.bidirStats.a2toA1.dbgHeadHex)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(nil)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(Color.orange.opacity(0.05))
-                            .cornerRadius(8)
-                        }
-                    }
-                    .font(.headline)
-                }
-                .padding()
-                .background(Color.platformBackground)
-                .cornerRadius(16)
-                .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
-                .padding(.horizontal)
-
-                // Throughput Chart
-                if !viewModel.bidirHistory.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Throughput Over Time")
-                            .font(.headline)
-
-                        Chart {
-                            ForEach(viewModel.bidirHistory) { point in
-                                LineMark(
-                                    x: .value("Time", point.timestamp),
-                                    y: .value("A1→A2 RX", point.rxRateA1),
-                                    series: .value("Direction", "A1→A2")
-                                )
-                                .foregroundStyle(.blue)
-                                .lineStyle(StrokeStyle(lineWidth: 2))
-
-                                LineMark(
-                                    x: .value("Time", point.timestamp),
-                                    y: .value("A2→A1 RX", point.rxRateA2),
-                                    series: .value("Direction", "A2→A1")
-                                )
-                                .foregroundStyle(.orange)
-                                .lineStyle(StrokeStyle(lineWidth: 2))
-                            }
-                        }
-                        .chartXAxis(.hidden)
-                        .chartForegroundStyleScale([
-                            "A1→A2": Color.blue,
-                            "A2→A1": Color.orange
-                        ])
-                        .chartLegend(position: .bottom)
-                        .chartYAxisLabel("msg/s")
-                        .frame(height: 200)
-                    }
-                    .padding()
-                    .background(Color.platformBackground)
-                    .cornerRadius(16)
-                    .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
-                    .padding(.horizontal)
-                }
 
                 Spacer(minLength: 20)
             }
@@ -483,17 +394,89 @@ struct BidirTestView: View {
     }
 }
 
+// Diagnostics table row: label | A→B value | B→A value
+struct DiagRow: View {
+    let label: String
+    let valA: String
+    let valB: String
+    var colorA: Color = .secondary
+    var colorB: Color = .secondary
+    var header: Bool = false
+    var info: String? = nil
+    @State private var showInfo = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(header ? .caption.bold() : .caption)
+                    .foregroundColor(header ? .primary : .secondary)
+                if let info {
+                    Button {
+                        showInfo.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showInfo) {
+                        Text(info)
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding()
+                            .frame(width: 280)
+                    }
+                }
+            }
+            .frame(width: 160, alignment: .leading)
+            Text(valA)
+                .font(.system(header ? .caption : .caption, design: .monospaced))
+                .fontWeight(header ? .bold : .medium)
+                .foregroundColor(header ? .blue : colorA)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            Text(valB)
+                .font(.system(header ? .caption : .caption, design: .monospaced))
+                .fontWeight(header ? .bold : .medium)
+                .foregroundColor(header ? .orange : colorB)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 // Bidir Stat Row
 struct BidirStatRow: View {
     let label: String
     let value: String
     let color: Color
+    var info: String? = nil
+    @State private var showInfo = false
 
     var body: some View {
         HStack {
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let info {
+                    Button {
+                        showInfo.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showInfo) {
+                        Text(info)
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding()
+                            .frame(width: 280)
+                    }
+                }
+            }
             Spacer()
             Text(value)
                 .font(.system(.caption, design: .monospaced))

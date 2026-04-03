@@ -25,6 +25,7 @@ public:
     std::atomic<uint32_t> _secTxBytes;
     std::atomic<uint32_t> _secRx;
     std::atomic<uint32_t> _secRxBytes;
+    std::atomic<uint32_t> _secSeqGaps;
     
     std::chrono::time_point<std::chrono::steady_clock> _startTime;
 };
@@ -62,6 +63,7 @@ void MetricsEngine::reset() {
     _impl->_secTxBytes = 0;
     _impl->_secRx = 0;
     _impl->_secRxBytes = 0;
+    _impl->_secSeqGaps = 0;
 }
 
 void MetricsEngine::cancel() {
@@ -117,6 +119,7 @@ void MetricsEngine::addReceived(const uint8_t* data, uint32_t length) {
         } else {
             uint32_t gap = (seq > expected) ? (uint32_t)(seq - expected) : 1;
             _impl->_rxSequenceGaps.fetch_add(gap, std::memory_order_relaxed);
+            _impl->_secSeqGaps.fetch_add(gap, std::memory_order_relaxed);
         }
 
         if (seq > lastSeq || (lastSeq - seq) > 0x7FFFFFFFFFFFFFFFULL) {
@@ -158,6 +161,7 @@ RateCounters MetricsEngine::drainPerSecondCounters() {
         .tx = _impl->_secTx.exchange(0, std::memory_order_relaxed),
         .txBytes = _impl->_secTxBytes.exchange(0, std::memory_order_relaxed),
         .rx = _impl->_secRx.exchange(0, std::memory_order_relaxed),
-        .rxBytes = _impl->_secRxBytes.exchange(0, std::memory_order_relaxed)
+        .rxBytes = _impl->_secRxBytes.exchange(0, std::memory_order_relaxed),
+        .seqGaps = _impl->_secSeqGaps.exchange(0, std::memory_order_relaxed)
     };
 }

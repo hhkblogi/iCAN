@@ -21,14 +21,6 @@ struct BandwidthTestStats {
     var rxDuplicates: Int = 0           // duplicate sequence numbers
     var rxDecodeFailures: Int = 0      // SLCAN lines that failed to decode
 
-    // Driver-level diagnostics (from USBSerialStatus)
-    var driverReadCompleteCount: Int = 0
-    var driverReadCompleteBytes: Int = 0
-    var driverReadSubmitFailures: Int = 0
-    var driverRxSlotsInFlight: Int = 0
-    var driverTxBusyCount: Int = 0
-    var driverReadChainRestarts: Int = 0
-
     // PCAN codec diagnostics (from SharedRingHeader via CANClient)
     var codecEchoCount: Int = 0        // TX echoes filtered by driver
     var codecOverrunCount: Int = 0     // firmware FIFO overflows (MSG_OVERRUN)
@@ -42,9 +34,19 @@ struct BandwidthTestStats {
     var dbgMsgsParsed: Int = 0
     var dbgHeadHex: String = ""        // hex dump of first 48 bytes
 
+    // Sequence-verified delivery from FlightWindow
+    var seqDeliveryRate: Double = -1.0
+    var deliveryReaped: UInt64 = 0       // frames past grace window (verified)
+    var deliveryConfirmed: UInt64 = 0    // of those, confirmed received
+    var deliveryTimedOut: UInt64 { deliveryReaped - deliveryConfirmed }
+    var deliveryRxCalls: UInt64 = 0       // total onRxReceived calls
+    var deliveryRxStale: UInt64 = 0       // rejected: seq too old (wrapped past bitmap)
+    var deliveryRxReaped: UInt64 = 0      // rejected: seq already reaped
+
     // Instantaneous per-second rates (updated every ~1s from drainPerSecondCounters)
     var instantTxRate: Double = 0
     var instantRxRate: Double = 0
+    var instantSeqGaps: Double = 0  // per-second missing sequence numbers
     var instantTxBandwidth: Double = 0
     var instantRxBandwidth: Double = 0
     var txRate: Double { instantTxRate }
@@ -67,8 +69,15 @@ struct BandwidthTestStats {
         bytesReceived = 0
         startTime = nil
         duration = 0
+        seqDeliveryRate = -1.0
+        deliveryReaped = 0
+        deliveryConfirmed = 0
+        deliveryRxCalls = 0
+        deliveryRxStale = 0
+        deliveryRxReaped = 0
         instantTxRate = 0
         instantRxRate = 0
+        instantSeqGaps = 0
         instantTxBandwidth = 0
         instantRxBandwidth = 0
         rxPolls = 0
@@ -79,12 +88,6 @@ struct BandwidthTestStats {
         rxOutOfOrder = 0
         rxDuplicates = 0
         rxDecodeFailures = 0
-        driverReadCompleteCount = 0
-        driverReadCompleteBytes = 0
-        driverReadSubmitFailures = 0
-        driverRxSlotsInFlight = 0
-        driverTxBusyCount = 0
-        driverReadChainRestarts = 0
         codecEchoCount = 0
         codecOverrunCount = 0
         codecTruncatedCount = 0

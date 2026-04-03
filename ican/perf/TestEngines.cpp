@@ -1,4 +1,5 @@
 #include "TestEngines.hpp"
+#include "FlightWindow.hpp"
 #include <atomic>
 #include <cstring>
 #include <pthread.h>
@@ -181,6 +182,8 @@ class BidirTestEngineImpl {
 public:
     MetricsEngine engineA1toA2;
     MetricsEngine engineA2toA1;
+    FlightWindow deliveryA1toA2;
+    FlightWindow deliveryA2toA1;
     std::atomic<bool> cancelled{false};
     pthread_t a1TxThread{};
     pthread_t a1RxThread{};
@@ -212,6 +215,7 @@ static void* bidirTxThread(void* arg) {
 
     CANClient& client = isA1 ? impl->a1Client : impl->a2Client;
     MetricsEngine& engine = isA1 ? impl->engineA1toA2 : impl->engineA2toA1;
+    FlightWindow& delivery = isA1 ? impl->deliveryA1toA2 : impl->deliveryA2toA1;
     uint32_t canId = isA1 ? 0x200 : 0x201;
 
     uint64_t counter = 0;
@@ -235,6 +239,7 @@ static void* bidirTxThread(void* arg) {
                 : (client.writeClassic((can_frame*)&f) == 1);
 
             if (!ok) break;
+            delivery.onTxSent(counter);
             framesSent++;
             counter++;
         }
@@ -263,6 +268,7 @@ static void* bidirRxThread(void* arg) {
     // A2 RX receives A1→A2 traffic (filter for CAN ID 0x200)
     CANClient& client = isA1 ? impl->a1Client : impl->a2Client;
     MetricsEngine& engine = isA1 ? impl->engineA2toA1 : impl->engineA1toA2;
+    FlightWindow& delivery = isA1 ? impl->deliveryA2toA1 : impl->deliveryA1toA2;
     uint32_t filterCanId = isA1 ? 0x201 : 0x200;
 
     CANPacket packets[256];
@@ -276,6 +282,15 @@ static void* bidirRxThread(void* arg) {
                 uint32_t id = f.can_id & CAN_EFF_MASK;
                 if (id == filterCanId || (f.can_id & CAN_SFF_MASK) == filterCanId) {
                     engine.addReceived(f.data, f.len);
+                    // Extract big-endian 8-byte sequence number for delivery tracking
+                    if (f.len >= 8) {
+                        uint64_t seqNum =
+                            ((uint64_t)f.data[0] << 56) | ((uint64_t)f.data[1] << 48) |
+                            ((uint64_t)f.data[2] << 40) | ((uint64_t)f.data[3] << 32) |
+                            ((uint64_t)f.data[4] << 24) | ((uint64_t)f.data[5] << 16) |
+                            ((uint64_t)f.data[6] << 8)  |  (uint64_t)f.data[7];
+                        delivery.onRxReceived(seqNum);
+                    }
                 }
             }
         } else {
@@ -298,6 +313,8 @@ void BidirTestEngine::startTest(CANClient a1Client, CANClient a2Client,
                                  int targetRateA, int targetRateB) {
     _impl->engineA1toA2.reset();
     _impl->engineA2toA1.reset();
+    _impl->deliveryA1toA2.reset();
+    _impl->deliveryA2toA1.reset();
     _impl->cancelled = false;
     _impl->a1Client = a1Client;
     _impl->a2Client = a2Client;
@@ -360,6 +377,49 @@ RateCounters BidirTestEngine::drainPerSecondCountersA1toA2() {
 
 RateCounters BidirTestEngine::drainPerSecondCountersA2toA1() {
     return _impl->engineA2toA1.drainPerSecondCounters();
+}
+
+double BidirTestEngine::deliveryRateA1toA2() {
+    return _impl->deliveryA1toA2.deliveryRate();
+}
+
+double BidirTestEngine::deliveryRateA2toA1() {
+    return _impl->deliveryA2toA1.deliveryRate();
+}
+
+uint64_t BidirTestEngine::deliveryReapedA1toA2() {
+    return _impl->deliveryA1toA2.totalSent();
+}
+
+uint64_t BidirTestEngine::deliveryConfirmedA1toA2() {
+    return _impl->deliveryA1toA2.totalConfirmed();
+}
+
+uint64_t BidirTestEngine::deliveryReapedA2toA1() {
+    return _impl->deliveryA2toA1.totalSent();
+}
+
+uint64_t BidirTestEngine::deliveryConfirmedA2toA1() {
+    return _impl->deliveryA2toA1.totalConfirmed();
+}
+
+uint64_t BidirTestEngine::deliveryRxCallsA1toA2() {
+    return _impl->deliveryA1toA2.rxCalls();
+}
+uint64_t BidirTestEngine::deliveryRxCallsA2toA1() {
+    return _impl->deliveryA2toA1.rxCalls();
+}
+uint64_t BidirTestEngine::deliveryRxStaleA1toA2() {
+    return _impl->deliveryA1toA2.rxStaleRejects();
+}
+uint64_t BidirTestEngine::deliveryRxStaleA2toA1() {
+    return _impl->deliveryA2toA1.rxStaleRejects();
+}
+uint64_t BidirTestEngine::deliveryRxReapedA1toA2() {
+    return _impl->deliveryA1toA2.rxReapedRejects();
+}
+uint64_t BidirTestEngine::deliveryRxReapedA2toA1() {
+    return _impl->deliveryA2toA1.rxReapedRejects();
 }
 
 // ============================================================
