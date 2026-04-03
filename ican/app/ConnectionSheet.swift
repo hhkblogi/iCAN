@@ -118,12 +118,8 @@ struct InterfaceSection: View {
 
                 Spacer()
 
-                Button { onCloseCAN() } label: {
-                    Label("Close", systemImage: "stop.fill")
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.orange)
-                .font(.caption)
+                Button("Close") { onCloseCAN() }
+                    .buttonStyle(.borderless)
             } else {
                 Button("Open") { onOpenCAN() }
                     .buttonStyle(.borderless)
@@ -131,8 +127,7 @@ struct InterfaceSection: View {
                 Spacer()
 
                 Button("Disconnect") { adapter.disconnect() }
-                    .foregroundColor(.red)
-                    .font(.caption)
+                    .buttonStyle(.borderless)
             }
         }
 
