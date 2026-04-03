@@ -39,6 +39,9 @@ struct BandwidthTestStats {
     var deliveryReaped: UInt64 = 0       // frames past grace window (verified)
     var deliveryConfirmed: UInt64 = 0    // of those, confirmed received
     var deliveryTimedOut: UInt64 { deliveryReaped - deliveryConfirmed }
+    var deliveryRxCalls: UInt64 = 0       // total onRxReceived calls
+    var deliveryRxStale: UInt64 = 0       // rejected: seq too old (wrapped past bitmap)
+    var deliveryRxReaped: UInt64 = 0      // rejected: seq already reaped
 
     // Instantaneous per-second rates (updated every ~1s from drainPerSecondCounters)
     var instantTxRate: Double = 0
@@ -69,6 +72,9 @@ struct BandwidthTestStats {
         seqDeliveryRate = -1.0
         deliveryReaped = 0
         deliveryConfirmed = 0
+        deliveryRxCalls = 0
+        deliveryRxStale = 0
+        deliveryRxReaped = 0
         instantTxRate = 0
         instantRxRate = 0
         instantSeqGaps = 0

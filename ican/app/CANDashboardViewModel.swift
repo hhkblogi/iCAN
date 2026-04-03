@@ -576,12 +576,18 @@ class CANDashboardViewModel: ObservableObject {
                     self.bidirStats.a1toA2.seqDeliveryRate = self.bidirEngine.deliveryRateA1toA2()
                     self.bidirStats.a1toA2.deliveryReaped = self.bidirEngine.deliveryReapedA1toA2()
                     self.bidirStats.a1toA2.deliveryConfirmed = self.bidirEngine.deliveryConfirmedA1toA2()
+                    self.bidirStats.a1toA2.deliveryRxCalls = self.bidirEngine.deliveryRxCallsA1toA2()
+                    self.bidirStats.a1toA2.deliveryRxStale = self.bidirEngine.deliveryRxStaleA1toA2()
+                    self.bidirStats.a1toA2.deliveryRxReaped = self.bidirEngine.deliveryRxReapedA1toA2()
                     self.bidirStats.a2toA1.instantTxRate = Double(p2.tx) / elapsed
                     self.bidirStats.a2toA1.instantRxRate = Double(p2.rx) / elapsed
                     self.bidirStats.a2toA1.instantSeqGaps = Double(p2.seqGaps) / elapsed
                     self.bidirStats.a2toA1.seqDeliveryRate = self.bidirEngine.deliveryRateA2toA1()
                     self.bidirStats.a2toA1.deliveryReaped = self.bidirEngine.deliveryReapedA2toA1()
                     self.bidirStats.a2toA1.deliveryConfirmed = self.bidirEngine.deliveryConfirmedA2toA1()
+                    self.bidirStats.a2toA1.deliveryRxCalls = self.bidirEngine.deliveryRxCallsA2toA1()
+                    self.bidirStats.a2toA1.deliveryRxStale = self.bidirEngine.deliveryRxStaleA2toA1()
+                    self.bidirStats.a2toA1.deliveryRxReaped = self.bidirEngine.deliveryRxReapedA2toA1()
 
                     self.bidirHistory.append(BidirHistoryPoint(
                         timestamp: now,

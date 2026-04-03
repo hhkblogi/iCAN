@@ -403,6 +403,25 @@ uint64_t BidirTestEngine::deliveryConfirmedA2toA1() {
     return _impl->deliveryA2toA1.totalConfirmed();
 }
 
+uint64_t BidirTestEngine::deliveryRxCallsA1toA2() {
+    return _impl->deliveryA1toA2.rxCalls();
+}
+uint64_t BidirTestEngine::deliveryRxCallsA2toA1() {
+    return _impl->deliveryA2toA1.rxCalls();
+}
+uint64_t BidirTestEngine::deliveryRxStaleA1toA2() {
+    return _impl->deliveryA1toA2.rxStaleRejects();
+}
+uint64_t BidirTestEngine::deliveryRxStaleA2toA1() {
+    return _impl->deliveryA2toA1.rxStaleRejects();
+}
+uint64_t BidirTestEngine::deliveryRxReapedA1toA2() {
+    return _impl->deliveryA1toA2.rxReapedRejects();
+}
+uint64_t BidirTestEngine::deliveryRxReapedA2toA1() {
+    return _impl->deliveryA2toA1.rxReapedRejects();
+}
+
 // ============================================================
 // Test 3: DistBidirTestEngine
 // ============================================================

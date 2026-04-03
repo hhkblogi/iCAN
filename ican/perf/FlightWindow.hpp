@@ -35,15 +35,21 @@ public:
 
     /// Record a received frame. O(1), lock-free, idempotent.
     void onRxReceived(uint64_t seq) {
+        rxCalls_.fetch_add(1, std::memory_order_relaxed);
         uint64_t head = head_seq_.load(std::memory_order_relaxed);
         // Reject acks for seq nums that have already wrapped past the bitmap.
-        // Without this, a very late ack would alias with a newer slot.
-        // Note: we intentionally do NOT reject seq >= head ("future" acks).
-        // On arm64 with relaxed ordering, head_seq can read stale, causing
-        // valid acks to be dropped. In practice, RX never outruns TX on a
-        // real CAN bus, so "future" acks simply mean head hasn't been
-        // observed yet — the bit set is harmless and correct.
-        if (head > seq && (head - seq) > kCapacity) return;
+        if (head > seq && (head - seq) > kCapacity) {
+            rxStaleRejects_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        // Reject acks for seq nums already reaped (behind base_seq).
+        // Without this, a late ack sets a bit in a cleared word, which
+        // will be falsely counted for a future frame in the next cycle.
+        uint64_t base = base_seq_;  // relaxed read OK: reaper is the only writer
+        if (seq < base) {
+            rxReapedRejects_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
 
         uint64_t idx  = seq & kMask;
         int      word = static_cast<int>(idx / 64);
@@ -71,12 +77,18 @@ public:
         base_seq_       = 0;
         totalSent_      = 0;
         totalConfirmed_ = 0;
+        rxCalls_.store(0, std::memory_order_relaxed);
+        rxStaleRejects_.store(0, std::memory_order_relaxed);
+        rxReapedRejects_.store(0, std::memory_order_relaxed);
     }
 
-    // Accessors for testing
-    uint64_t totalSent()      const { return totalSent_; }
-    uint64_t totalConfirmed() const { return totalConfirmed_; }
-    uint64_t baseSeq()        const { return base_seq_; }
+    // Accessors
+    uint64_t totalSent()       const { return totalSent_; }
+    uint64_t totalConfirmed()  const { return totalConfirmed_; }
+    uint64_t baseSeq()         const { return base_seq_; }
+    uint64_t rxCalls()         const { return rxCalls_.load(std::memory_order_relaxed); }
+    uint64_t rxStaleRejects()  const { return rxStaleRejects_.load(std::memory_order_relaxed); }
+    uint64_t rxReapedRejects() const { return rxReapedRejects_.load(std::memory_order_relaxed); }
 
 private:
     void reap() {
@@ -110,6 +122,11 @@ private:
     alignas(128) uint64_t base_seq_{0};
     uint64_t totalSent_{0};
     uint64_t totalConfirmed_{0};
+
+    // Debug counters (written by RX thread)
+    alignas(128) std::atomic<uint64_t> rxCalls_{0};
+    std::atomic<uint64_t> rxStaleRejects_{0};
+    std::atomic<uint64_t> rxReapedRejects_{0};
 };
 
 #endif /* FlightWindow_hpp */

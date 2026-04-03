@@ -233,8 +233,8 @@ struct BidirTestView: View {
                     .padding(.horizontal)
                 }
 
-                // Live Statistics — Two-column layout
-                VStack(alignment: .leading, spacing: 16) {
+                // Live Statistics — table layout matching Diagnostics
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Live Statistics")
                             .font(.headline)
@@ -247,58 +247,42 @@ struct BidirTestView: View {
                             .monospacedDigit()
                     }
 
-                    // Two-column: A→B (blue) | B→A (orange)
-                    HStack(alignment: .top, spacing: 16) {
-                        // Left column: A → B
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Circle().fill(.blue).frame(width: 10, height: 10)
-                                Text("A → B (0x200)").font(.headline)
-                            }
-                            Divider()
-                            BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantTxRate), color: .primary)
-                            BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a1toA2.instantRxRate), color: .primary)
-                            // Sequence-verified delivery from FlightWindow
-                            let dr1 = viewModel.bidirStats.a1toA2.seqDeliveryRate
-                            let dr1Str = dr1 < 0 ? "---" : String(format: "%.2f%%", dr1)
-                            let dr1Color: Color = dr1 < 0 ? .secondary : (dr1 > 99.9 ? .green : .orange)
-                            BidirStatRow(label: "Delivery", value: dr1Str, color: dr1Color)
-                            BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a1toA2.messagesSent)", color: .secondary)
-                            BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a1toA2.messagesReceived)", color: .secondary)
-                            let t1 = viewModel.bidirStats.a1toA2.deliveryTimedOut
-                            BidirStatRow(label: "Missed", value: t1 > 0 ? "\(t1)" : "0", color: t1 > 0 ? .red : .secondary,
-                                        info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue.opacity(0.05))
-                        .cornerRadius(12)
+                    let s1 = viewModel.bidirStats.a1toA2
+                    let s2 = viewModel.bidirStats.a2toA1
 
-                        // Right column: B → A
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Circle().fill(.orange).frame(width: 10, height: 10)
-                                Text("B → A (0x201)").font(.headline)
-                            }
-                            Divider()
-                            BidirStatRow(label: "TX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantTxRate), color: .primary)
-                            BidirStatRow(label: "RX Rate", value: String(format: "%.0f msg/s", viewModel.bidirStats.a2toA1.instantRxRate), color: .primary)
-                            // Sequence-verified delivery from FlightWindow
-                            let dr2 = viewModel.bidirStats.a2toA1.seqDeliveryRate
-                            let dr2Str = dr2 < 0 ? "---" : String(format: "%.2f%%", dr2)
-                            let dr2Color: Color = dr2 < 0 ? .secondary : (dr2 > 99.9 ? .green : .orange)
-                            BidirStatRow(label: "Delivery", value: dr2Str, color: dr2Color)
-                            BidirStatRow(label: "Sent", value: "\(viewModel.bidirStats.a2toA1.messagesSent)", color: .secondary)
-                            BidirStatRow(label: "Recv", value: "\(viewModel.bidirStats.a2toA1.messagesReceived)", color: .secondary)
-                            let t2 = viewModel.bidirStats.a2toA1.deliveryTimedOut
-                            BidirStatRow(label: "Missed", value: t2 > 0 ? "\(t2)" : "0", color: t2 > 0 ? .red : .secondary,
-                                        info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange.opacity(0.05))
-                        .cornerRadius(12)
-                    }
+                    // Header
+                    DiagRow(label: "", valA: "A → B", valB: "B → A", header: true)
+                    Divider()
+
+                    DiagRow(label: "TX Rate",
+                            valA: String(format: "%.0f msg/s", s1.instantTxRate),
+                            valB: String(format: "%.0f msg/s", s2.instantTxRate))
+                    DiagRow(label: "RX Rate",
+                            valA: String(format: "%.0f msg/s", s1.instantRxRate),
+                            valB: String(format: "%.0f msg/s", s2.instantRxRate))
+
+                    let dr1 = s1.seqDeliveryRate
+                    let dr2 = s2.seqDeliveryRate
+                    DiagRow(label: "Delivery",
+                            valA: dr1 < 0 ? "---" : String(format: "%.2f%%", dr1),
+                            valB: dr2 < 0 ? "---" : String(format: "%.2f%%", dr2),
+                            colorA: dr1 < 0 ? .secondary : (dr1 > 99.9 ? .green : .orange),
+                            colorB: dr2 < 0 ? .secondary : (dr2 > 99.9 ? .green : .orange))
+                    DiagRow(label: "Sent",
+                            valA: "\(s1.messagesSent)",
+                            valB: "\(s2.messagesSent)")
+                    DiagRow(label: "Recv",
+                            valA: "\(s1.messagesReceived)",
+                            valB: "\(s2.messagesReceived)")
+
+                    let t1 = s1.deliveryTimedOut
+                    let t2 = s2.deliveryTimedOut
+                    DiagRow(label: "Missed",
+                            valA: t1 > 0 ? "\(t1)" : "0",
+                            valB: t2 > 0 ? "\(t2)" : "0",
+                            colorA: t1 > 0 ? .red : .secondary,
+                            colorB: t2 > 0 ? .red : .secondary,
+                            info: "Frames sent but not confirmed received within a 2-second sliding window. Each frame carries a sequence number; if the receiver doesn't report that sequence number before the window expires, the frame is counted as missed.")
                 }
                 .padding()
                 .background(Color.platformBackground)
@@ -327,6 +311,14 @@ struct BidirTestView: View {
                     DiagRow(label: "Seq Gaps", valA: "\(s1.rxSequenceGaps)", valB: "\(s2.rxSequenceGaps)",
                             colorA: s1.rxSequenceGaps > 0 ? .red : .secondary, colorB: s2.rxSequenceGaps > 0 ? .red : .secondary,
                             info: "Number of missing sequence numbers detected in received frames. Each gap indicates one or more frames were lost between sender and receiver.")
+                    DiagRow(label: "FW RxAcks", valA: "\(s1.deliveryRxCalls)", valB: "\(s2.deliveryRxCalls)",
+                            info: "Total onRxReceived() calls to FlightWindow. Should match Recv count if all frames have len≥8.")
+                    DiagRow(label: "FW Stale Rej", valA: "\(s1.deliveryRxStale)", valB: "\(s2.deliveryRxStale)",
+                            colorA: s1.deliveryRxStale > 0 ? .red : .secondary, colorB: s2.deliveryRxStale > 0 ? .red : .secondary,
+                            info: "Acks rejected because seq wrapped past bitmap capacity (head-seq > 16384).")
+                    DiagRow(label: "FW Reaped Rej", valA: "\(s1.deliveryRxReaped)", valB: "\(s2.deliveryRxReaped)",
+                            colorA: s1.deliveryRxReaped > 0 ? .orange : .secondary, colorB: s2.deliveryRxReaped > 0 ? .orange : .secondary,
+                            info: "Acks rejected because seq was already reaped (seq < base_seq). Frame arrived after the 2-second grace window expired.")
                     Divider()
 
                     // IPC
