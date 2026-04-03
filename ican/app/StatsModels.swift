@@ -21,14 +21,6 @@ struct BandwidthTestStats {
     var rxDuplicates: Int = 0           // duplicate sequence numbers
     var rxDecodeFailures: Int = 0      // SLCAN lines that failed to decode
 
-    // Driver-level diagnostics (from USBSerialStatus)
-    var driverReadCompleteCount: Int = 0
-    var driverReadCompleteBytes: Int = 0
-    var driverReadSubmitFailures: Int = 0
-    var driverRxSlotsInFlight: Int = 0
-    var driverTxBusyCount: Int = 0
-    var driverReadChainRestarts: Int = 0
-
     // PCAN codec diagnostics (from SharedRingHeader via CANClient)
     var codecEchoCount: Int = 0        // TX echoes filtered by driver
     var codecOverrunCount: Int = 0     // firmware FIFO overflows (MSG_OVERRUN)
@@ -90,12 +82,6 @@ struct BandwidthTestStats {
         rxOutOfOrder = 0
         rxDuplicates = 0
         rxDecodeFailures = 0
-        driverReadCompleteCount = 0
-        driverReadCompleteBytes = 0
-        driverReadSubmitFailures = 0
-        driverRxSlotsInFlight = 0
-        driverTxBusyCount = 0
-        driverReadChainRestarts = 0
         codecEchoCount = 0
         codecOverrunCount = 0
         codecTruncatedCount = 0

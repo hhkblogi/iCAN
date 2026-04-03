@@ -347,32 +347,14 @@ struct BidirTestView: View {
                     DiagRow(label: "Duplicates", valA: "\(s1.rxDuplicates)", valB: "\(s2.rxDuplicates)",
                             colorA: s1.rxDuplicates > 0 ? .orange : .secondary, colorB: s2.rxDuplicates > 0 ? .orange : .secondary,
                             info: "Frames received with the same sequence number as the previous frame. May indicate USB retransmission or codec echo.")
-                    Divider()
-
-                    // Driver
-                    DiagRow(label: "ReadComplete", valA: "\(s1.driverReadCompleteCount)", valB: "\(s2.driverReadCompleteCount)",
-                            info: "USB read completions processed by the DriverKit extension (ReadCompleteBundled). Each completion delivers one USB transfer worth of CAN data.")
-                    DiagRow(label: "USB IN Bytes", valA: "\(s1.driverReadCompleteBytes)", valB: "\(s2.driverReadCompleteBytes)",
-                            info: "Total bytes received from USB IN endpoint across all read completions.")
-                    DiagRow(label: "Submit Fail", valA: "\(s1.driverReadSubmitFailures)", valB: "\(s2.driverReadSubmitFailures)",
-                            colorA: s1.driverReadSubmitFailures > 0 ? .red : .secondary, colorB: s2.driverReadSubmitFailures > 0 ? .red : .secondary,
-                            info: "Failed attempts to resubmit USB read buffers. Indicates the driver couldn't keep up with USB completions, causing temporary RX gaps.")
-                    DiagRow(label: "RX Slots InFlight", valA: "\(s1.driverRxSlotsInFlight)", valB: "\(s2.driverRxSlotsInFlight)",
-                            colorA: s1.driverRxSlotsInFlight > 0 ? .green : .red, colorB: s2.driverRxSlotsInFlight > 0 ? .green : .red,
-                            info: "USB read buffers currently submitted to the USB host controller, waiting for data. Should be >0 during active reception.")
-                    DiagRow(label: "TX Busy", valA: "\(s1.driverTxBusyCount)", valB: "\(s2.driverTxBusyCount)",
-                            info: "Times the driver's TX path was busy when a new write was attempted. High count may indicate USB OUT endpoint backpressure.")
-                    DiagRow(label: "Chain Restarts", valA: "\(s1.driverReadChainRestarts)", valB: "\(s2.driverReadChainRestarts)",
-                            colorA: s1.driverReadChainRestarts > 0 ? .orange : .secondary, colorB: s2.driverReadChainRestarts > 0 ? .orange : .secondary,
-                            info: "Times the USB read chain was restarted after all slots completed without resubmission. Indicates a brief RX gap.")
                     DiagRow(label: "Ring RX Drop", valA: "\(s1.ringRxDropped)", valB: "\(s2.ringRxDropped)",
                             colorA: s1.ringRxDropped > 0 ? .red : .secondary, colorB: s2.ringRxDropped > 0 ? .red : .secondary,
                             info: "Frames dropped because the shared RX ring buffer was full. The app wasn't draining fast enough to keep up with the driver.")
+                    Divider()
 
                     // Codec-specific (per-interface)
                     let codecA = codecForAdapter(viewModel.bidirAdapterA)
                     let codecB = codecForAdapter(viewModel.bidirAdapterB)
-                    Divider()
                     DiagRow(label: "Codec", valA: codecA, valB: codecB, header: true)
                     if codecA == "pcan" || codecB == "pcan" {
                         DiagRow(label: "TX Echoes",
