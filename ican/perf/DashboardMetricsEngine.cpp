@@ -16,6 +16,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <time.h>
 
 // Pre-parsed frame data prepared outside the mutex
 struct ParsedFrame {
@@ -38,18 +39,24 @@ public:
 
     CANClient client;
 
-    // --- Atomic counters (hot path — updated per frame) ---
+    // --- Atomic counters (hot path — updated per RX frame) ---
     std::atomic<uint64_t> totalMessages{0};
     std::atomic<uint64_t> totalBytes{0};
     std::atomic<uint32_t> secMessages{0};  // per-second, drained by drainRateCounters
     std::atomic<uint32_t> secBytes{0};
+
+    // --- TX tracking (sampled from CANClient, not atomic — read on snapshot) ---
+    uint32_t lastTxCount{0};        // last sampled txCount
+    std::atomic<uint32_t> secTx{0}; // per-second TX, drained by drainRateCounters
 
     // startTime is protected by dataMutex (read by reader thread, written by reset())
     std::chrono::steady_clock::time_point startTime;
 
     // --- Mutex-protected state (updated per frame, read ~3x/sec) ---
     std::mutex dataMutex;
-    std::unordered_map<uint32_t, std::pair<uint32_t, bool>> idCounts;  // canId -> (count, isExtended)
+    // canId -> (count, isExtended, lastSeenTimestamp_us)
+    struct IdInfo { uint32_t count; bool isExtended; uint64_t lastSeen_us; };
+    std::unordered_map<uint32_t, IdInfo> idCounts;
     RecentFrame recentBuf[kMaxRecentFrames];
     int recentHead = 0;   // next write position
     int recentCount = 0;  // total written (capped at kMaxRecentFrames)
@@ -93,8 +100,9 @@ public:
                 for (int i = 0; i < n; i++) {
                     const auto& p = parsed[i];
                     auto& entry = idCounts[p.rawId];
-                    entry.first++;
-                    entry.second = p.isExtended;
+                    entry.count++;
+                    entry.isExtended = p.isExtended;
+                    entry.lastSeen_us = p.timestamp_us;
 
                     auto& rf = recentBuf[recentHead];
                     rf.canId = p.rawId;
@@ -175,6 +183,22 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
     snap.totalBytes = _impl->totalBytes.load(std::memory_order_relaxed);
     snap.dropCount = _impl->client.dropCount();
 
+    // Sample TX count and compute delta for per-second tracking
+    uint32_t currentTx = _impl->client.txCount();
+    uint32_t txDelta = 0;
+    if (currentTx >= _impl->lastTxCount) {
+        txDelta = currentTx - _impl->lastTxCount;
+    } else {
+        txDelta = 0;  // wrap or reset
+    }
+    if (txDelta > 0) {
+        _impl->secTx.fetch_add(txDelta, std::memory_order_relaxed);
+    }
+    _impl->lastTxCount = currentTx;
+    snap.totalTxFrames = currentTx;
+    snap.rxReaderCount = _impl->client.rxReaderCount();
+    snap.txWriterCount = _impl->client.txWriterCount();
+
     // Copy raw data under lock; sort and format outside lock
     struct IdEntry { uint32_t id; uint32_t count; bool isExt; };
     std::vector<IdEntry> entries;
@@ -187,10 +211,20 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
 
         snap.uniqueIdCount = static_cast<int>(_impl->idCounts.size());
 
+        // Count RX IDs active in last 30 seconds
+        uint64_t now_us = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+        uint64_t window_us = 30ULL * 1000000ULL;  // 30 seconds
+        int rxIds30s = 0;
+
         entries.reserve(_impl->idCounts.size());
-        for (const auto& [id, val] : _impl->idCounts) {
-            entries.push_back({id, val.first, val.second});
+        for (const auto& [id, info] : _impl->idCounts) {
+            entries.push_back({id, info.count, info.isExtended});
+            if (now_us >= info.lastSeen_us && (now_us - info.lastSeen_us) < window_us) {
+                rxIds30s++;
+            }
         }
+        snap.rxUniqueIds30s = rxIds30s;
+        snap.txUniqueIds30s = _impl->client.txUniqueIds(30);
 
         // Copy recent frames (newest first)
         snap.recentFrameCount = _impl->recentCount;
@@ -216,7 +250,8 @@ DashboardSnapshot DashboardMetricsEngine::snapshot() {
 DashboardRateCounters DashboardMetricsEngine::drainRateCounters() {
     return {
         _impl->secMessages.exchange(0, std::memory_order_relaxed),
-        _impl->secBytes.exchange(0, std::memory_order_relaxed)
+        _impl->secBytes.exchange(0, std::memory_order_relaxed),
+        _impl->secTx.exchange(0, std::memory_order_relaxed)
     };
 }
 
@@ -228,6 +263,8 @@ void DashboardMetricsEngine::reset() {
     _impl->totalBytes.store(0, std::memory_order_relaxed);
     _impl->secMessages.store(0, std::memory_order_relaxed);
     _impl->secBytes.store(0, std::memory_order_relaxed);
+    _impl->secTx.store(0, std::memory_order_relaxed);
+    _impl->lastTxCount = _impl->client.txCount();
 
     std::lock_guard<std::mutex> lock(_impl->dataMutex);
     _impl->startTime = std::chrono::steady_clock::now();

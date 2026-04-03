@@ -3,114 +3,237 @@ import Charts
 
 struct DashboardView: View {
     @ObservedObject var viewModel: CANDashboardViewModel
-    
+
+    /// Available interface tabs
+    private var interfaceTabs: [String] {
+        var tabs = ["All"]
+        for adapter in viewModel.adapters where adapter.isCANOpen {
+            tabs.append(adapter.name)
+        }
+        return tabs
+    }
+
+    /// Index of the selected adapter (nil for "All")
+    private var selectedAdapterIndex: Int? {
+        guard viewModel.dashboardInterfaceFilter != "All" else { return nil }
+        return viewModel.adapters.firstIndex(where: { $0.name == viewModel.dashboardInterfaceFilter })
+    }
+
+    private var openInterfaceNames: Set<String> {
+        Set(viewModel.adapters.filter(\.isCANOpen).map(\.name))
+    }
+
+    private var visibleTrafficHistory: [InterfaceTrafficPoint] {
+        let filter = viewModel.dashboardInterfaceFilter
+        return viewModel.interfaceTrafficHistory.filter { point in
+            openInterfaceNames.contains(point.interfaceName) &&
+            (filter == "All" || point.interfaceName == filter)
+        }
+    }
+
+    /// Adapters to show in the metrics table
+    private var visibleAdapters: [(offset: Int, element: SerialAdapter)] {
+        let all = Array(viewModel.adapters.enumerated())
+        if let idx = selectedAdapterIndex {
+            return all.filter { $0.offset == idx }
+        }
+        return all
+    }
+
+    private var trafficChartColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+    }
+
     var body: some View {
         ScrollView {
+            let now = Date()
             VStack(spacing: 20) {
+                // Interface tabs
+                HStack(spacing: 4) {
+                    ForEach(interfaceTabs, id: \.self) { tab in
+                        Button {
+                            viewModel.dashboardInterfaceFilter = tab
+                        } label: {
+                            Text(tab)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 14)
+                                .foregroundColor(viewModel.dashboardInterfaceFilter == tab ? .white : .secondary)
+                                .background(viewModel.dashboardInterfaceFilter == tab ? Color.indigo : Color.clear)
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+
                 // Top Stats Row
-                HStack(spacing: 16) {
-                    StatCard(
-                        title: "System Status",
-                        value: viewModel.metrics.networkHealth,
-                        icon: "network",
-                        color: viewModel.metrics.networkHealth == "Excellent" ? .green :
-                                viewModel.metrics.networkHealth == "Good" ? .blue : .orange
-                    )
-                    
-                    StatCard(
-                        title: "Message Rate",
-                        value: String(format: "%.0f msg/s", viewModel.metrics.messageRate),
-                        icon: "speedometer",
-                        color: .blue
-                    )
-                    
-                    StatCard(
-                        title: "Throughput",
-                        value: String(format: "%.1f KB/s", viewModel.metrics.throughput),
-                        icon: "arrow.up.arrow.down",
-                        color: .purple
-                    )
-                    
-                    StatCard(
-                        title: "Bus Load",
-                        value: String(format: "%.1f%%", viewModel.metrics.busLoad),
-                        icon: "chart.pie.fill",
-                        color: viewModel.metrics.busLoad > 80 ? .red :
-                                viewModel.metrics.busLoad > 50 ? .orange : .green
-                    )
-                }
-                .padding(.horizontal)
-                
-                // Hardware Status Cards
-                HStack(spacing: 16) {
-                    ForEach(viewModel.busStatuses) { status in
-                        HardwareStatusCard(status: status)
+                // Metrics Table
+                VStack(spacing: 0) {
+                    // Header row
+                    HStack(spacing: 0) {
+                        Text("Interface")
+                            .frame(width: 80, alignment: .leading)
+                        Text("Status")
+                            .frame(width: 120, alignment: .leading)
+                        Text("TX msg/s")
+                            .frame(width: 80, alignment: .trailing)
+                        Text("RX msg/s")
+                            .frame(width: 80, alignment: .trailing)
+                        Text("TX KB/s")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("RX KB/s")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("TX IDs")
+                            .frame(width: 55, alignment: .trailing)
+                        Text("RX IDs")
+                            .frame(width: 55, alignment: .trailing)
+                        Text("Bus Load")
+                            .frame(width: 70, alignment: .trailing)
                     }
-                }
-                .padding(.horizontal)
-                
-                // Charts Suite Row
-                HStack(spacing: 16) {
-                    // Traffic over time Mini Chart
-                    ChartCard(title: "Traffic Volume (msg/s)") {
-                        if viewModel.messageDistribution.isEmpty {
-                            ContentUnavailableView("Waiting for data...", systemImage: "chart.xyaxis.line")
-                        } else {
-                            Chart {
-                                ForEach(viewModel.messageDistribution) { point in
-                                    AreaMark(
-                                        x: .value("Time", point.timestamp),
-                                        y: .value("Messages", point.count)
-                                    )
-                                    .foregroundStyle(
-                                        .linearGradient(
-                                            colors: [.blue.opacity(0.5), .blue.opacity(0.1)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    
-                                    LineMark(
-                                        x: .value("Time", point.timestamp),
-                                        y: .value("Messages", point.count)
-                                    )
-                                    .foregroundStyle(.blue)
-                                }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color.platformSecondaryBackground.opacity(0.5))
+
+                    Divider()
+
+                    // Data rows
+                    ForEach(visibleAdapters, id: \.offset) { idx, adapter in
+                        let status = idx < viewModel.busStatuses.count ? viewModel.busStatuses[idx] : nil
+
+                        HStack(spacing: 0) {
+                            // Interface name
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(interfaceStatusColor(adapter))
+                                    .frame(width: 6, height: 6)
+                                Text(adapter.name)
+                                    .monospaced()
                             }
-                            .chartXAxis(.hidden)
-                            .chartYAxis {
-                                AxisMarks(position: .leading)
-                            }
-                        }
-                    }
-                    
-                    // ID Distribution Chart
-                    ChartCard(title: "Active CAN IDs") {
-                        if viewModel.idDistribution.isEmpty {
-                            ContentUnavailableView("Waiting for data...", systemImage: "chart.pie")
-                        } else {
-                            Chart(viewModel.idDistribution) { item in
-                                BarMark(
-                                    x: .value("Count", item.count),
-                                    y: .value("CAN ID", item.canId)
+                            .frame(width: 80, alignment: .leading)
+
+                            // Status
+                            Text(interfaceStatusText(adapter))
+                                .foregroundColor(.secondary)
+                                .frame(width: 120, alignment: .leading)
+
+                            if adapter.isCANOpen, let status {
+                                Text(String(format: "%.0f", status.txRate))
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 80, alignment: .trailing)
+                                Text(String(format: "%.0f", status.messageRate))
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 80, alignment: .trailing)
+                                Text(String(format: "%.1f", status.txRate * 12 / 1024))
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 70, alignment: .trailing)
+                                Text(String(format: "%.1f", status.messageRate * 12 / 1024))
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 70, alignment: .trailing)
+                                Text("\(status.txUniqueIds30s)")
+                                    .foregroundColor(.blue)
+                                    .monospacedDigit()
+                                    .frame(width: 55, alignment: .trailing)
+                                Text("\(status.rxUniqueIds30s)")
+                                    .foregroundColor(.purple)
+                                    .monospacedDigit()
+                                    .frame(width: 55, alignment: .trailing)
+                                let load = CANBusLoad.busLoadPercent(
+                                    framesPerSec: status.txRate + status.messageRate,
+                                    bitrate: adapter.selectedBitrate.rawValue,
+                                    isFD: adapter.canFDEnabled,
+                                    dataBytes: adapter.canFDEnabled ? 64 : 8
                                 )
-                                .foregroundStyle(by: .value("ID", item.canId))
-                                .annotation(position: .trailing) {
-                                    Text("\(item.count)").font(.caption).foregroundColor(.secondary)
-                                }
+                                Text(String(format: "%.1f%%", load))
+                                    .fontWeight(.medium)
+                                    .foregroundColor(load > 80 ? .red : load > 50 ? .orange : .primary)
+                                    .monospacedDigit()
+                                    .frame(width: 70, alignment: .trailing)
+                            } else {
+                                Text("—").frame(width: 80, alignment: .trailing)
+                                Text("—").frame(width: 80, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
+                                Text("—").frame(width: 55, alignment: .trailing)
+                                Text("—").frame(width: 55, alignment: .trailing)
+                                Text("—").frame(width: 70, alignment: .trailing)
                             }
-                            .chartLegend(.hidden)
-                            .chartXAxis(.hidden)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal)
+                        .padding(.vertical, 6)
+
+                        if idx < visibleAdapters.last?.offset ?? 0 {
+                            Divider().padding(.horizontal)
                         }
                     }
                 }
-                .frame(height: 250)
+                .background(Color.platformSecondaryBackground)
+                .cornerRadius(12)
                 .padding(.horizontal)
-                
+
+                // Traffic Volume Charts
+                let trafficPoints = visibleTrafficHistory
+                let txMax = trafficPoints.lazy.map(\.txRate).max() ?? 0
+                let rxMax = trafficPoints.lazy.map(\.rxRate).max() ?? 0
+                LazyVGrid(columns: trafficChartColumns, spacing: 16) {
+                    TrafficChartCard(
+                        title: "TX Traffic",
+                        points: trafficPoints,
+                        now: now,
+                        rateKeyPath: \.txRate,
+                        maxRate: txMax
+                    )
+
+                    TrafficChartCard(
+                        title: "RX Traffic",
+                        points: trafficPoints,
+                        now: now,
+                        rateKeyPath: \.rxRate,
+                        maxRate: rxMax
+                    )
+                }
+                .padding(.horizontal)
+
                 Spacer(minLength: 20)
             }
             .padding(.vertical)
         }
+    }
+
+    private func interfaceStatusText(_ adapter: SerialAdapter) -> String {
+        if !adapter.isConnected {
+            return "closed"
+        }
+        if !adapter.isCANOpen {
+            return "connected, not open"
+        }
+        if let idx = viewModel.adapters.firstIndex(where: { $0 === adapter }),
+           idx < viewModel.busStatuses.count {
+            let status = viewModel.busStatuses[idx]
+            let rxActive = status.messageRate > 0
+            let txActive = status.txRate > 0
+            var parts: [String] = []
+            if rxActive { parts.append("RX(\(status.rxReaderCount))") }
+            if txActive { parts.append("TX(\(status.txWriterCount))") }
+            if !parts.isEmpty { return parts.joined(separator: ", ") }
+        }
+        return "open, idle"
+    }
+
+    // TODO: Use .yellow for error state (CAN bus errors, overruns) when error tracking is added
+    private func interfaceStatusColor(_ adapter: SerialAdapter) -> Color {
+        if !adapter.isConnected { return .red }
+        if !adapter.isCANOpen { return .orange }
+        return .green
     }
 }
 
@@ -118,21 +241,13 @@ struct DashboardView: View {
 struct StatCard: View {
     let title: String
     let value: String
-    let icon: String
-    let color: Color
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.title3)
-            }
-            
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
             Text(value)
                 .font(.title2)
                 .fontWeight(.bold)
@@ -148,7 +263,7 @@ struct StatCard: View {
 
 struct HardwareStatusCard: View {
     let status: BusStatus
-    
+
     var body: some View {
         VStack(spacing: 8) {
             HStack {
@@ -159,9 +274,9 @@ struct HardwareStatusCard: View {
                     .font(.headline)
                 Spacer()
             }
-            
+
             Divider()
-            
+
             HStack {
                 VStack(alignment: .leading) {
                     Text("Messages")
@@ -191,17 +306,95 @@ struct HardwareStatusCard: View {
 struct ChartCard<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
-    
+
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.headline)
                 .padding([.top, .leading, .trailing])
-            
+
             content()
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.platformSecondaryBackground)
         .cornerRadius(12)
+    }
+}
+
+struct TrafficChartCard: View {
+    let title: String
+    let points: [InterfaceTrafficPoint]
+    let now: Date
+    let rateKeyPath: KeyPath<InterfaceTrafficPoint, Double>
+    let maxRate: Double
+
+    private var xAxisTicks: [Date] {
+        [
+            now.addingTimeInterval(-20),
+            now.addingTimeInterval(-15),
+            now.addingTimeInterval(-10),
+            now.addingTimeInterval(-5),
+            now
+        ]
+    }
+
+    var body: some View {
+        ChartCard(title: title) {
+            if points.isEmpty {
+                ContentUnavailableView("Waiting for data...", systemImage: "chart.xyaxis.line")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Chart(points) { point in
+                    LineMark(
+                        x: .value("Time", point.timestamp),
+                        y: .value("Rate", point[keyPath: rateKeyPath]),
+                        series: .value("Interface", point.interfaceName)
+                    )
+                    .foregroundStyle(by: .value("Interface", point.interfaceName))
+                    .lineStyle(StrokeStyle(lineWidth: 2.5))
+                    .opacity(0.8)
+                }
+                .chartXScale(domain: now.addingTimeInterval(-20)...now.addingTimeInterval(1))
+                .chartXAxis {
+                    AxisMarks(values: xAxisTicks) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let date = value.as(Date.self) {
+                                let offset = Int(round(date.timeIntervalSince(now)))
+                                Text("\(offset)")
+                                    .font(.caption2)
+                                    .fixedSize()
+                            }
+                        }
+                    }
+                }
+                .chartYScale(domain: 0...max(maxRate, 4000) * 1.1)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 6)) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let val = value.as(Double.self) {
+                                Text(String(format: "%.0f", val))
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+                .chartXAxisLabel("Time (sec)", alignment: .center)
+                .chartYAxisLabel("Msg #", position: .leading)
+                .chartPlotStyle { plotArea in
+                    plotArea
+                        .background(Color.platformBackground.opacity(0.35))
+                        .border(Color.secondary.opacity(0.2))
+                        .clipped()
+                }
+                .chartLegend(position: .bottom, alignment: .leading, spacing: 12)
+                .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity)
+                .drawingGroup()  // GPU-accelerated rendering for smooth chart updates
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
     }
 }

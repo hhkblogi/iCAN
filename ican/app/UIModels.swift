@@ -31,7 +31,12 @@ struct CANLogMessage: Identifiable {
 struct BusStatus: Identifiable {
     let id = UUID()
     let name: String
-    var messageRate: Double
+    var messageRate: Double    // RX msg/s
+    var txRate: Double = 0     // TX msg/s
+    var rxReaderCount: Int = 0
+    var txWriterCount: Int = 0
+    var rxUniqueIds30s: Int = 0
+    var txUniqueIds30s: Int = 0
     var messageCount: Int
     var busLoad: Double
     var isConnected: Bool
@@ -67,6 +72,14 @@ struct MessageRatePoint: Identifiable {
     let id = UUID()
     let timestamp: Date
     let messageRate: Double
+}
+
+struct InterfaceTrafficPoint: Identifiable, Equatable {
+    let id = UUID()
+    let timestamp: Date
+    let interfaceName: String
+    let txRate: Double
+    let rxRate: Double
 }
 
 struct BandwidthHistoryPoint: Identifiable {

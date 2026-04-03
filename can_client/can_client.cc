@@ -17,6 +17,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
+#include <time.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -136,6 +138,14 @@ public:
      * drainRxFrames fan out each frame to all active readers on the
      * matching channel, providing SocketCAN-like independent-reader semantics. */
     static constexpr int kMaxChannels = 2;
+
+    // Per-channel TX write counters (incremented in writeTxFrame, read by dashboard engine)
+    std::atomic<uint32_t> txWriteCount[kMaxChannels] = {};
+    std::atomic<int> txWriterCount[kMaxChannels] = {};  // distinct writers per channel
+
+    // Per-channel TX CAN ID tracking: canId -> last write timestamp (microseconds)
+    std::mutex txIdMutex;
+    std::unordered_map<uint32_t, uint64_t> txIdLastSeen[kMaxChannels];
     static constexpr int kMaxReaders = 8;
 
     struct ReaderSlot {
@@ -365,6 +375,9 @@ public:
         }
 
         ring_store_head_release(txCtrl, head + entrySize);
+        if (channel >= 0 && channel < kMaxChannels) {
+            txWriteCount[channel].fetch_add(1, std::memory_order_relaxed);
+        }
         return true;
     }
 
@@ -526,6 +539,8 @@ CANClient::CANClient() : _impl(std::make_shared<CANClientImpl>()), _channel(0), 
 CANClient::~CANClient() {
     if (_readerId >= 0 && _impl)
         _impl->unregisterReader(_readerId);
+    if (_isTxRegistered && _impl && _channel >= 0 && _channel < CANClientImpl::kMaxChannels)
+        _impl->txWriterCount[_channel].fetch_sub(1, std::memory_order_relaxed);
 }
 
 // Copy: shares impl but gets its own reader slot on first read
@@ -854,6 +869,19 @@ int CANClient::writeClassic(const struct can_frame* frame) {
     memcpy(fd_frame.data, frame->data, copyLen);
 
     if (!c.writeTxFrame(&fd_frame, _channel)) return 0;
+    if (!_isTxRegistered && _channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        c.txWriterCount[_channel].fetch_add(1, std::memory_order_relaxed);
+        _isTxRegistered = true;
+    }
+    // Track TX CAN ID (sampled — not every frame)
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        uint32_t count = c.txWriteCount[_channel].load(std::memory_order_relaxed);
+        if ((count & 0xFF) == 0) {  // sample every ~256 writes
+            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
+            std::lock_guard<std::mutex> lock(c.txIdMutex);
+            c.txIdLastSeen[_channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+        }
+    }
     c.triggerTxDrain();
     return 1;
 }
@@ -867,6 +895,19 @@ int CANClient::write(const struct canfd_frame* frame) {
     CAN_CHANNEL(tagged) = static_cast<uint8_t>(_channel);
 
     if (!c.writeTxFrame(&tagged, _channel)) return 0;
+    if (!_isTxRegistered && _channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        c.txWriterCount[_channel].fetch_add(1, std::memory_order_relaxed);
+        _isTxRegistered = true;
+    }
+    // Track TX CAN ID (sampled)
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels) {
+        uint32_t count = c.txWriteCount[_channel].load(std::memory_order_relaxed);
+        if ((count & 0xFF) == 0) {
+            uint32_t canId = frame->can_id & 0x1FFFFFFFU;
+            std::lock_guard<std::mutex> lock(c.txIdMutex);
+            c.txIdLastSeen[_channel][canId] = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+        }
+    }
     c.triggerTxDrain();
     return 1;
 }
@@ -959,6 +1000,46 @@ uint32_t CANClient::dropCount() const {
     if (c.ringHeader && c.ringHeader->magic == SHARED_RING_MAGIC)
         return c.ringHeader->rxDropped;
     return 0;
+}
+
+uint32_t CANClient::txCount() const {
+    auto& c = *_impl;
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels)
+        return c.txWriteCount[_channel].load(std::memory_order_relaxed);
+    return 0;
+}
+
+int CANClient::rxReaderCount() const {
+    auto& c = *_impl;
+    int count = 0;
+    std::lock_guard<std::mutex> lock(c.readers_lock);
+    for (int i = 0; i < CANClientImpl::kMaxReaders; i++) {
+        if (c.readers[i].active && c.readers[i].channel == _channel)
+            count++;
+    }
+    return count;
+}
+
+int CANClient::txWriterCount() const {
+    auto& c = *_impl;
+    if (_channel >= 0 && _channel < CANClientImpl::kMaxChannels)
+        return c.txWriterCount[_channel].load(std::memory_order_relaxed);
+    return 0;
+}
+
+int CANClient::txUniqueIds(int windowSec) const {
+    auto& c = *_impl;
+    if (_channel < 0 || _channel >= CANClientImpl::kMaxChannels) return 0;
+    uint64_t now_us = clock_gettime_nsec_np(CLOCK_REALTIME) / 1000;
+    uint64_t window_us = static_cast<uint64_t>(windowSec) * 1000000ULL;
+    int count = 0;
+    {
+        std::lock_guard<std::mutex> lock(c.txIdMutex);
+        for (const auto& [id, lastSeen] : c.txIdLastSeen[_channel]) {
+            if (now_us >= lastSeen && (now_us - lastSeen) < window_us) count++;
+        }
+    }
+    return count;
 }
 
 uint32_t CANClient::codecEchoCount() const {
