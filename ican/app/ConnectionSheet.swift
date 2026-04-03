@@ -18,9 +18,9 @@ struct PortsView: View {
                 }
             } else {
                 ForEach(viewModel.usbAdapters) { usbAdapter in
-                    Section {
-                        ForEach(usbAdapter.interfaces) { iface in
-                            if let adapter = viewModel.adapterForInterface(iface) {
+                    ForEach(Array(usbAdapter.interfaces.enumerated()), id: \.element.id) { idx, iface in
+                        if let adapter = viewModel.adapterForInterface(iface) {
+                            Section {
                                 InterfaceSection(
                                     iface: iface,
                                     adapter: adapter,
@@ -28,14 +28,16 @@ struct PortsView: View {
                                     onOpenCAN: { viewModel.openCANChannel(for: adapter) },
                                     onCloseCAN: { viewModel.closeCANChannel(for: adapter) }
                                 )
-                            }
-                        }
-                    } header: {
-                        HStack {
-                            Text("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)")
-                            Spacer()
-                            Button { viewModel.refreshPorts() } label: {
-                                Image(systemName: "arrow.clockwise")
+                            } header: {
+                                if idx == 0 {
+                                    HStack {
+                                        Text("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)")
+                                        Spacer()
+                                        Button { viewModel.refreshPorts() } label: {
+                                            Image(systemName: "arrow.clockwise")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
