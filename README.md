@@ -99,8 +99,8 @@ RX entries: [uint16_t frameSize][uint64_t timestamp_us][can_frame/canfd_frame by
 bazel run //:xcodeproj
 
 # Build targets
-bazel build //:iCAN                          # App only
-bazel build //:iCAN_with_dext                # App + embedded DriverKit extension
+bazel build //:iCAN_app                          # App only
+bazel build //:iCAN_app_with_dext                # App + embedded DriverKit extension
 bazel build //usb_can_driver:USBCANDriver    # .dext only
 
 # Test
