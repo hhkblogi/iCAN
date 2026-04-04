@@ -18,15 +18,12 @@ struct DiagnosticView: View {
                 }
             }
 
-            ScrollView {
-                Text(diagnostics.isEmpty ? "No diagnostics available. Tap refresh." : diagnostics)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Color.platformSecondaryBackground)
-                    .cornerRadius(8)
-            }
-            .frame(height: 150)
+            Text(diagnostics.isEmpty ? "No diagnostics available. Tap refresh." : diagnostics)
+                .font(.system(.caption, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(Color.platformSecondaryBackground)
+                .cornerRadius(8)
 
             Link("Open iPad Settings to approve DriverKit Extensions", destination: URL(string: UIApplication.openSettingsURLString)!)
                 .font(.caption)

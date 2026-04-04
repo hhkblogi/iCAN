@@ -18,9 +18,9 @@ struct PortsView: View {
                 }
             } else {
                 ForEach(viewModel.usbAdapters) { usbAdapter in
-                    Section("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)") {
-                        ForEach(usbAdapter.interfaces) { iface in
-                            if let adapter = viewModel.adapterForInterface(iface) {
+                    ForEach(Array(usbAdapter.interfaces.enumerated()), id: \.element.id) { idx, iface in
+                        if let adapter = viewModel.adapterForInterface(iface) {
+                            Section {
                                 InterfaceSection(
                                     iface: iface,
                                     adapter: adapter,
@@ -28,17 +28,28 @@ struct PortsView: View {
                                     onOpenCAN: { viewModel.openCANChannel(for: adapter) },
                                     onCloseCAN: { viewModel.closeCANChannel(for: adapter) }
                                 )
+                            } header: {
+                                if idx == 0 {
+                                    HStack {
+                                        Text("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)")
+                                        Spacer()
+                                        Button { viewModel.refreshPorts() } label: {
+                                            Label("Refresh", systemImage: "arrow.clockwise")
+                                                .labelStyle(.iconOnly)
+                                        }
+                                    }
+                                }
                             }
                         }
-                        Button("Refresh") { viewModel.refreshPorts() }
-                            .font(.caption)
                     }
                 }
             }
 
             // Diagnostic Section
-            Section("Driver Diagnostics") {
-                DiagnosticView()
+            Section {
+                DisclosureGroup("Driver Diagnostics") {
+                    DiagnosticView()
+                }
             }
         }
     }
@@ -102,36 +113,26 @@ struct InterfaceSection: View {
         HStack {
             if !adapter.isConnected {
                 Button("Connect") { onConnect() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderless)
                     .disabled(adapter.isConnecting)
             } else if adapter.isCANOpen {
                 HStack(spacing: 6) {
                     Circle().fill(.green).frame(width: 8, height: 8)
-                    Text("CAN Open").font(.caption).foregroundColor(.green)
+                    Text("CAN bus active").font(.caption).foregroundColor(.green)
                 }
 
                 Spacer()
 
-                Button { onCloseCAN() } label: {
-                    Label("Close CAN", systemImage: "stop.fill")
-                }
-                .foregroundColor(.orange)
-                .font(.caption)
-
-                Button("Disconnect") { adapter.disconnect() }
-                    .foregroundColor(.red)
-                    .font(.caption)
+                Button("Close") { onCloseCAN() }
+                    .buttonStyle(.borderless)
             } else {
-                Button { onOpenCAN() } label: {
-                    Label("Open CAN", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
+                Button("Open") { onOpenCAN() }
+                    .buttonStyle(.borderless)
 
                 Spacer()
 
                 Button("Disconnect") { adapter.disconnect() }
-                    .foregroundColor(.red)
-                    .font(.caption)
+                    .buttonStyle(.borderless)
             }
         }
 
