@@ -13,7 +13,7 @@
 #   - Provisioning profiles directory (auto-discovered by bundle ID)
 #   - Keychain (signing identity)
 
-[[ "${PRODUCT_NAME:-}" == "iCAN" || "${PRODUCT_NAME:-}" == "iCAN_app" ]] || exit 0
+[[ "${PRODUCT_NAME:-}" == "iCAN" || "${PRODUCT_NAME:-}" == "app_ios" ]] || exit 0
 [[ "$PLATFORM_NAME" == *simulator* ]] && exit 0
 [[ "$ACTION" == "indexbuild" ]] && exit 0
 
