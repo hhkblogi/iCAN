@@ -44,8 +44,8 @@ cd iCAN
 # 3. Generate Xcode project
 bazel run //:xcodeproj
 
-# 4. Open iCAN.xcodeproj in Xcode, select your iPad, and run
-open iCAN.xcodeproj
+# 4. Open ican.xcodeproj in Xcode, select your iPad, and run
+open ican.xcodeproj
 ```
 
 `scripts/setup.sh` creates `team_config.bzl` from the template and activates the pre-commit hook that prevents accidental Team ID commits.
@@ -99,8 +99,8 @@ RX entries: [uint16_t frameSize][uint64_t timestamp_us][can_frame/canfd_frame by
 bazel run //:xcodeproj
 
 # Build targets
-bazel build //:iCAN_app                          # App only
-bazel build //:iCAN_app_with_dext                # App + embedded DriverKit extension
+bazel build //:app_ios                          # App only
+bazel build //:app_ios_with_dext                # App + embedded DriverKit extension
 bazel build //usb_can_driver:USBCANDriver    # .dext only
 
 # Test
