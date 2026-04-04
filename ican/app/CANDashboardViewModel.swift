@@ -160,7 +160,6 @@ class CANDashboardViewModel: ObservableObject {
         }
 
         availableInterfaces = interfaces
-        usbAdapters = usbAdapterList
 
         // Build adapters array: one SerialAdapter per discovered interface.
         // Preserve existing adapters that match (by selectedPort) to keep connection state.
@@ -194,6 +193,7 @@ class CANDashboardViewModel: ObservableObject {
 
         adapters = newAdapters
         dashEngines = newEngines
+        usbAdapters = usbAdapterList  // publish after adapters to avoid flicker
 
         for adapter in adapters {
             adapter.objectWillChange.sink { [weak self] _ in

@@ -34,7 +34,8 @@ struct PortsView: View {
                                         Text("USB Adapter \(usbAdapter.deviceIndex): \(usbAdapter.name)")
                                         Spacer()
                                         Button { viewModel.refreshPorts() } label: {
-                                            Image(systemName: "arrow.clockwise")
+                                            Label("Refresh", systemImage: "arrow.clockwise")
+                                                .labelStyle(.iconOnly)
                                         }
                                     }
                                 }
