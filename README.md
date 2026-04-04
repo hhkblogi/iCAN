@@ -71,7 +71,7 @@ open iCAN.xcodeproj
 | Module | Language | Description |
 |---|---|---|
 | `protocol/` | C++ (header-only) | CAN frame types (`can_frame`, `canfd_frame`, error frames) shared by all modules |
-| `can_client/` | C++23 | App-to-driver IPC via IOKit, manages the shared memory ring buffer (SPSC lock-free, 64KB RX + 16KB TX) |
+| `can_client/` | C++23 | App-to-driver IPC via IOKit, manages the shared memory ring buffer (SPSC lock-free, 256KB RX + per-channel 16KB TX rings) |
 | `usb_can_driver/` | C++23 | DriverKit extension with compile-time codec dispatch via `CanProtocol` concept |
 | `ican/` | Swift + C++23 | SwiftUI app. `CANDashboardViewModel` is the central state container. `ican/perf/` has C++ engines for low-latency testing |
 | `stub_lib/` | — | DriverKit profile runtime linked into driver builds |
@@ -82,7 +82,8 @@ open iCAN.xcodeproj
 ```
 App writes TX ring → driver drains & encodes via codec → USB out
 USB in → driver decodes → RX ring → app reads
-Ring entries: [uint16_t size][canfd_frame][uint64_t timestamp_us]
+TX entries: [uint16_t frameSize][can_frame/canfd_frame bytes]
+RX entries: [uint16_t frameSize][uint64_t timestamp_us][can_frame/canfd_frame bytes]
 ```
 
 ### Languages & Interop
@@ -126,7 +127,7 @@ bazel test //...                             # All tests
 - App bundle: `com.<TEAM>.iCAN`
 - Driver bundle: `com.<TEAM>.iCAN.driver`
 - The app requires the `com.apple.developer.driverkit.communicates-with-drivers` entitlement
-- The pre-commit hook in `.githooks/` prevents accidental Team ID and provisioning profile commits
+- The pre-commit hook in `.githooks/` prevents accidental Team ID and `.mobileprovision` commits
 - `scripts/embed_dext.sh` is the Xcode post-build hook that builds the .dext via Bazel, embeds it into the app bundle, and re-signs
 
 ## Protocol Attribution
