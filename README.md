@@ -107,8 +107,8 @@ bazel build //usb_can_driver:USBCANDriver    # .dext only
 bazel test //...                             # Run all tests
 
 # Build configs
-bazel build -c dbg //:iCAN                   # Debug build
-bazel build -c opt //:iCAN                   # Optimized build
+bazel build -c dbg //:app_ios                 # Debug build
+bazel build -c opt //:app_ios                 # Optimized build
 ```
 
 Disk cache is configured at `~/.cache/bazel-disk` via `.bazelrc`.

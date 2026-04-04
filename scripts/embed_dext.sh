@@ -82,7 +82,7 @@ if [ -n "$DEXT_PROFILE" ]; then
 else
     echo "warning: no provisioning profile found for $DEXT_BUNDLE_ID" >&2
     echo "  iPad will not show the 'Enable extensions' toggle in Settings > Privacy & Security" >&2
-    echo "  Fix: open iCAN.xcodeproj, build USBCANDriver target once to download profile" >&2
+    echo "  Fix: open ican.xcodeproj, build USBCANDriver target once to download profile" >&2
 fi
 
 # Auto-discover and embed the app provisioning profile (replace Bazel's ad-hoc one)
