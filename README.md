@@ -28,7 +28,7 @@ An iPadOS app for monitoring and testing CAN bus hardware via USB adapters, buil
 - iPadOS 26.0+
 - USB-C connection to CAN adapter
 - Apple Developer account (DriverKit entitlement required)
-- [Bazel](https://bazel.build/) 8.6.0
+- [Bazel](https://bazel.build/) 8+
 
 ## Quick Start
 
