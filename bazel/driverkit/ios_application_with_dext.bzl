@@ -46,11 +46,26 @@ def _ios_application_with_dext_impl(ctx):
     app_name = ctx.attr.app_name
     sign_identity = ctx.attr.codesign_identity or "-"
 
+    # Optional distribution signing inputs
+    extra_inputs = []
+    dext_profile_path = ""
+    dext_entitlements_path = ""
+    if ctx.file.dext_provisioning_profile:
+        dext_profile_path = ctx.file.dext_provisioning_profile.path
+        extra_inputs.append(ctx.file.dext_provisioning_profile)
+    if ctx.file.dext_entitlements:
+        dext_entitlements_path = ctx.file.dext_entitlements.path
+        extra_inputs.append(ctx.file.dext_entitlements)
+
     cmd = """
 set -euo pipefail
 EXECROOT="$PWD"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+
+SIGN_IDENTITY={sign_identity}
+DEXT_PROFILE={dext_profile}
+DEXT_ENTITLEMENTS={dext_entitlements}
 
 # Copy and extract base .ipa
 cp {app_archive} "$WORK/base.ipa"
@@ -70,11 +85,35 @@ mkdir -p "$APP_DIR/SystemExtensions/{dext_dir_name}"
 # Copy .dext files
 {copy_commands}
 
-# Re-sign the .dext
-/usr/bin/codesign --force --sign {sign_identity} --timestamp=none "$APP_DIR/SystemExtensions/{dext_dir_name}" || true
+DEXT_PATH="$APP_DIR/SystemExtensions/{dext_dir_name}"
 
-# Re-sign the .app
-/usr/bin/codesign --force --sign {sign_identity} --timestamp=none "$APP_DIR" || true
+# Make all copied dext files writable (Bazel outputs are read-only)
+chmod -R u+w "$DEXT_PATH"
+
+# If a dext provisioning profile is provided, embed it and sign with distribution identity
+if [ -n "$DEXT_PROFILE" ] && [ "$SIGN_IDENTITY" != "-" ]; then
+    # Embed provisioning profile in the dext
+    cp "$EXECROOT/$DEXT_PROFILE" "$DEXT_PATH/embedded.mobileprovision"
+    chmod u+w "$DEXT_PATH/embedded.mobileprovision"
+
+    # Sign dext with distribution identity + entitlements
+    if [ -n "$DEXT_ENTITLEMENTS" ]; then
+        /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
+            --entitlements "$EXECROOT/$DEXT_ENTITLEMENTS" \
+            --options runtime --timestamp=none "$DEXT_PATH"
+    else
+        /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
+            --options runtime --timestamp=none "$DEXT_PATH"
+    fi
+
+    # Re-sign the app (deep, to include the newly added dext)
+    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --deep \
+        --options runtime --timestamp=none "$APP_DIR"
+else
+    # Development/ad-hoc path
+    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$DEXT_PATH" || true
+    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$APP_DIR" || true
+fi
 
 # Re-package as .ipa
 cd extracted
@@ -85,12 +124,14 @@ cp "$WORK/output.ipa" "$EXECROOT"/{output}
         dext_dir_name = dext_dir_name,
         copy_commands = _gen_copy_commands(dext_files, dext_dir_name),
         sign_identity = _quote(sign_identity),
+        dext_profile = _quote(dext_profile_path),
+        dext_entitlements = _quote(dext_entitlements_path),
         output = _quote(out_ipa.path),
         app_name = app_name,
     )
 
     ctx.actions.run_shell(
-        inputs = [app_archive] + dext_files,
+        inputs = [app_archive] + dext_files + extra_inputs,
         outputs = [out_ipa],
         command = cmd,
         mnemonic = "EmbedDext",
@@ -167,7 +208,15 @@ ios_application_with_dext = rule(
         ),
         "codesign_identity": attr.string(
             default = "-",
-            doc = "Code signing identity for re-signing.",
+            doc = "Code signing identity for re-signing. Use '-' for ad-hoc (dev) or 'Apple Distribution: ...' for App Store.",
+        ),
+        "dext_provisioning_profile": attr.label(
+            allow_single_file = [".mobileprovision", ".provisionprofile"],
+            doc = "Distribution provisioning profile to embed in the dext (required for App Store).",
+        ),
+        "dext_entitlements": attr.label(
+            allow_single_file = [".entitlements", ".plist"],
+            doc = "Entitlements file for the dext (used with distribution signing).",
         ),
     },
     doc = "Embeds a .dext DriverKit extension into an ios_application .ipa bundle.",

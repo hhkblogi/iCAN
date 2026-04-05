@@ -1,16 +1,22 @@
 #!/bin/bash
 # find_profile.sh — Find a provisioning profile by bundle ID and team ID.
-# Usage: find_profile.sh <team_id> <bundle_id> <output_path>
+# Usage: find_profile.sh <team_id> <bundle_id> <output_path> [type]
+#   type: "dev" (default) or "appstore"
 #
 # Searches both Xcode-managed and manually-installed profile directories.
 # Matches by application-identifier (team_id.bundle_id) in the profile's
 # entitlements, not by profile name.
+#
+# Profile type is detected by the presence of ProvisionedDevices key:
+#   - Development profiles have ProvisionedDevices
+#   - App Store distribution profiles do NOT have ProvisionedDevices
 
 set -eo pipefail
 
 TEAM_ID="$1"
 BUNDLE_ID="$2"
 OUTPUT="$3"
+TYPE="${4:-dev}"
 EXPECTED_APPID="${TEAM_ID}.${BUNDLE_ID}"
 
 USER_HOME="${HOME:-$(eval echo ~)}"
@@ -20,19 +26,62 @@ PROFILE_DIRS=(
     "$USER_HOME/Library/MobileDevice/Provisioning Profiles"
 )
 
+# Collect SHA-1 fingerprints of installed signing identities (certs with private keys)
+INSTALLED_FPS=$(security find-identity -v -p codesigning 2>/dev/null | \
+    awk '{ print $2 }' | grep -E '^[A-F0-9]{40}$' || true)
+
+FALLBACK=""
+
 for dir in "${PROFILE_DIRS[@]}"; do
     [ -d "$dir" ] || continue
     for f in "$dir"/*.mobileprovision "$dir"/*.provisionprofile; do
         [ -f "$f" ] || continue
-        appid=$(security cms -D -i "$f" 2>/dev/null | \
+        decoded=$(security cms -D -i "$f" 2>/dev/null) || continue
+        appid=$(echo "$decoded" | \
             xmllint --xpath '//key[text()="application-identifier"]/following-sibling::string[1]/text()' - 2>/dev/null) || continue
-        if [ "$appid" = "$EXPECTED_APPID" ]; then
+        if [ "$appid" != "$EXPECTED_APPID" ]; then
+            continue
+        fi
+        # Filter by profile type: dev profiles have ProvisionedDevices, appstore don't
+        if echo "$decoded" | grep -q '<key>ProvisionedDevices</key>'; then
+            profile_type="dev"
+        else
+            profile_type="appstore"
+        fi
+        if [ "$profile_type" != "$TYPE" ]; then
+            continue
+        fi
+        # Prefer profiles whose cert matches an installed signing identity
+        profile_fps=$(echo "$decoded" | \
+            xmllint --xpath '//key[text()="DeveloperCertificates"]/following-sibling::array[1]' - 2>/dev/null | \
+            grep -oE '<data>[^<]+</data>' | sed 's/<data>//;s/<\/data>//' | while read b64; do
+                echo "$b64" | base64 -D 2>/dev/null | \
+                    openssl x509 -inform DER -noout -fingerprint -sha1 2>/dev/null | \
+                    cut -d= -f2 | tr -d ':'
+            done)
+        matched=false
+        for pfp in $profile_fps; do
+            if echo "$INSTALLED_FPS" | grep -q "$pfp"; then
+                matched=true
+                break
+            fi
+        done
+        if [ "$matched" = true ]; then
             cp "$f" "$OUTPUT"
             exit 0
         fi
+        # Keep as fallback if no cert-matching profile found
+        [ -z "$FALLBACK" ] && FALLBACK="$f"
     done
 done
 
-echo "ERROR: No provisioning profile found for $EXPECTED_APPID" >&2
-echo "  Install a profile for bundle ID '$BUNDLE_ID' (team $TEAM_ID)" >&2
+if [ -n "$FALLBACK" ]; then
+    echo "WARNING: No $TYPE profile found whose cert matches an installed identity." >&2
+    echo "  Using fallback: $FALLBACK" >&2
+    cp "$FALLBACK" "$OUTPUT"
+    exit 0
+fi
+
+echo "ERROR: No $TYPE provisioning profile found for $EXPECTED_APPID" >&2
+echo "  Install a $TYPE profile for bundle ID '$BUNDLE_ID' (team $TEAM_ID)" >&2
 exit 1

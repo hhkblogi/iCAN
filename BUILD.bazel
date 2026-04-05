@@ -57,10 +57,11 @@ fi
 
 APP_BUNDLE_ID = "com.hhkblogi.ican"
 
+# Development profile (for local device debugging)
 genrule(
     name = "local_profile",
     outs = ["iCAN.mobileprovision"],
-    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + APP_BUNDLE_ID + " $@",
+    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + APP_BUNDLE_ID + " $@ dev",
     tools = ["//scripts:find_profile.sh"],
     local = True,
     tags = ["no-cache"],
@@ -71,6 +72,32 @@ xcode_provisioning_profile(
     managed_by_xcode = True,
     provisioning_profile = ":local_profile",
     team_id = TEAM_ID,
+)
+
+# App Store distribution profile
+genrule(
+    name = "appstore_profile",
+    outs = ["iCAN_AppStore.mobileprovision"],
+    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + APP_BUNDLE_ID + " $@ appstore",
+    tools = ["//scripts:find_profile.sh"],
+    local = True,
+    tags = [
+        "manual",
+        "no-cache",
+    ],
+)
+
+# App Store distribution profile for the DriverKit extension
+genrule(
+    name = "dext_appstore_profile",
+    outs = ["iCAN_Dext_AppStore.mobileprovision"],
+    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + APP_BUNDLE_ID + ".driver $@ appstore",
+    tools = ["//scripts:find_profile.sh"],
+    local = True,
+    tags = [
+        "manual",
+        "no-cache",
+    ],
 )
 
 # =============================================================================
@@ -98,4 +125,35 @@ ios_application_with_dext(
     app = ":app_ios",
     app_name = "iCAN",
     dext = "//usb_can_driver:USBCANDriver",
+)
+
+# =============================================================================
+# iOS Application — App Store submission
+# =============================================================================
+# Build with: bazel build //:app_ios_appstore_with_dext --config=appstore
+# Requires a distribution provisioning profile for com.hhkblogi.ican installed
+# locally (downloaded from developer.apple.com or Xcode Settings → Accounts).
+
+ios_application(
+    name = "app_ios_appstore",
+    app_icons = ["//ican:AppIcon"],
+    bundle_id = "com.hhkblogi.ican",
+    entitlements = "//ican:iCAN.entitlements",
+    families = ["ipad"],
+    infoplists = ["//ican:Info.plist"],
+    minimum_os_version = "26.0",
+    provisioning_profile = ":appstore_profile",
+    tags = ["manual"],
+    deps = ["//ican:iCANLib"],
+)
+
+ios_application_with_dext(
+    name = "app_ios_appstore_with_dext",
+    app = ":app_ios_appstore",
+    app_name = "iCAN",
+    codesign_identity = "Apple Distribution: XIAOCHEN WANG (" + TEAM_ID + ")",
+    dext = "//usb_can_driver:USBCANDriver",
+    dext_entitlements = "//usb_can_driver:USBCANDriver.entitlements",
+    dext_provisioning_profile = ":dext_appstore_profile",
+    tags = ["manual"],
 )
