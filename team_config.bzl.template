@@ -3,3 +3,9 @@
 # team_config.bzl is gitignored and will not be committed.
 
 TEAM_ID = "YOUR_TEAM_ID_HERE"
+
+# Apple Distribution signing identity used for App Store builds.
+# Run `security find-identity -v -p codesigning` to see your installed
+# identities. Default format: "Apple Distribution: FULL NAME (TEAM_ID)".
+# Only needed for //:app_ios_appstore_with_dext.
+APPSTORE_IDENTITY = "Apple Distribution: YOUR NAME (" + TEAM_ID + ")"

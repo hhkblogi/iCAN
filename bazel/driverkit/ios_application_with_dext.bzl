@@ -106,8 +106,10 @@ if [ -n "$DEXT_PROFILE" ] && [ "$SIGN_IDENTITY" != "-" ]; then
             --options runtime --timestamp=none "$DEXT_PATH"
     fi
 
-    # Re-sign the app (deep, to include the newly added dext)
-    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --deep \
+    # Re-sign only the top-level app bundle; the dext was already signed
+    # above with its own entitlements. Using --deep here would re-sign the
+    # dext without those entitlements and undo the previous step.
+    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
         --options runtime --timestamp=none "$APP_DIR"
 else
     # Development/ad-hoc path

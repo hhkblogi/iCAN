@@ -51,14 +51,19 @@ for dir in "${PROFILE_DIRS[@]}"; do
         if [ "$profile_type" != "$TYPE" ]; then
             continue
         fi
-        # Prefer profiles whose cert matches an installed signing identity
-        profile_fps=$(echo "$decoded" | \
-            xmllint --xpath '//key[text()="DeveloperCertificates"]/following-sibling::array[1]' - 2>/dev/null | \
-            grep -oE '<data>[^<]+</data>' | sed 's/<data>//;s/<\/data>//' | while read b64; do
-                echo "$b64" | base64 -D 2>/dev/null | \
-                    openssl x509 -inform DER -noout -fingerprint -sha1 2>/dev/null | \
-                    cut -d= -f2 | tr -d ':'
-            done)
+        # Prefer profiles whose cert matches an installed signing identity.
+        # Use Python's plistlib to robustly parse the plist (including
+        # multi-line base64 <data> blocks) and extract each cert's SHA-1
+        # fingerprint directly.
+        profile_fps=$(echo "$decoded" | python3 -c '
+import sys, plistlib, hashlib
+try:
+    d = plistlib.loads(sys.stdin.buffer.read())
+    for cert_der in d.get("DeveloperCertificates", []):
+        print(hashlib.sha1(cert_der).hexdigest().upper())
+except Exception:
+    pass
+' 2>/dev/null)
         matched=false
         for pfp in $profile_fps; do
             if echo "$INSTALLED_FPS" | grep -q "$pfp"; then

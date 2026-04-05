@@ -8,7 +8,7 @@ load(
     "xcodeproj",
     "xcode_provisioning_profile",
 )
-load("//:team_config.bzl", "TEAM_ID")
+load("//:team_config.bzl", "APPSTORE_IDENTITY", "TEAM_ID")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -151,7 +151,7 @@ ios_application_with_dext(
     name = "app_ios_appstore_with_dext",
     app = ":app_ios_appstore",
     app_name = "iCAN",
-    codesign_identity = "Apple Distribution: XIAOCHEN WANG (" + TEAM_ID + ")",
+    codesign_identity = APPSTORE_IDENTITY,
     dext = "//usb_can_driver:USBCANDriver",
     dext_entitlements = "//usb_can_driver:USBCANDriver.entitlements",
     dext_provisioning_profile = ":dext_appstore_profile",
