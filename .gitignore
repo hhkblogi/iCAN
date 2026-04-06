@@ -55,8 +55,10 @@ dist/
 # Bazel lock file (large, regenerated)
 MODULE.bazel.lock
 
-# Generated Xcode project from rules_xcodeproj
+# Generated Xcode projects from rules_xcodeproj
 iCAN.xcodeproj/
+ican.xcodeproj/
+examples/can-client-demo/can-client-demo.xcodeproj/
 
 # Log files
 *.log
