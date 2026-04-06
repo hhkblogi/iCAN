@@ -10,7 +10,13 @@ if [ ! -f team_config.bzl ]; then
     echo "Created team_config.bzl from template."
     echo "  → Edit it and set TEAM_ID to your Apple Developer Team ID."
 else
-    echo "team_config.bzl already exists, skipping."
+    # Migrate: add APPSTORE_IDENTITY if missing (added in v0.2)
+    if ! grep -q 'APPSTORE_IDENTITY' team_config.bzl; then
+        printf '\n# Apple Distribution signing identity for App Store builds (leave empty to skip).\nAPPSTORE_IDENTITY = ""\n' >> team_config.bzl
+        echo "Added APPSTORE_IDENTITY to existing team_config.bzl (defaults to empty)."
+    else
+        echo "team_config.bzl already exists, skipping."
+    fi
 fi
 
 # --- git hooks ---
