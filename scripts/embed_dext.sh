@@ -50,9 +50,9 @@ DEXT_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Sy
 [ -n "$DEXT_BUNDLE_ID" ] || { echo "error: cannot read dext bundle ID" >&2; exit 1; }
 
 # Auto-discover dext provisioning profile by bundle ID.
-# For dev builds (Debug config), only use development profiles (has ProvisionedDevices).
-# For release builds, prefer distribution profiles (no ProvisionedDevices).
-# This prevents distribution profiles from breaking dev installs.
+# Only use development profiles (has ProvisionedDevices + get-task-allow).
+# This script is the Xcode post-build hook for device deployment; distribution
+# signing is handled by ios_application_with_dext.bzl instead.
 PROFILES_DIRS=(
     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
     "$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -63,15 +63,16 @@ for PROFILES_DIR in "${PROFILES_DIRS[@]}"; do
     for f in "$PROFILES_DIR"/*.mobileprovision "$PROFILES_DIR"/*.provisionprofile; do
         [ -f "$f" ] || continue
         decoded=$(security cms -D -i "$f" 2>/dev/null) || continue
-        appid=$(echo "$decoded" | \
+        appid=$(printf '%s' "$decoded" | \
             xmllint --xpath '//key[text()="application-identifier"]/following-sibling::string[1]/text()' - 2>/dev/null)
         if [[ "$appid" != *"$DEXT_BUNDLE_ID" ]]; then
             continue
         fi
-        # Only use development profiles (has ProvisionedDevices).
-        # This script is the Xcode post-build hook — always a dev build.
-        # App Store builds go through ios_application_with_dext.bzl instead.
-        if echo "$decoded" | grep -q '<key>ProvisionedDevices</key>'; then
+        # Only use development profiles (has ProvisionedDevices + get-task-allow).
+        # This excludes Ad Hoc profiles which have ProvisionedDevices but
+        # get-task-allow=false, causing install failures on dev devices.
+        if printf '%s' "$decoded" | grep -q '<key>ProvisionedDevices</key>' && \
+           printf '%s' "$decoded" | grep -A1 '<key>get-task-allow</key>' | grep -q '<true/>'; then
             DEXT_PROFILE="$f"
             break 2
         fi

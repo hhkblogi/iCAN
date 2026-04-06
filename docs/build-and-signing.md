@@ -32,7 +32,7 @@ scripts/embed_dext.sh runs as a post-build hook:
   1. Calls "bazel build //usb_can_driver:USBCANDriver" to compile the .dext
   2. Copies the built .dext into the app bundle (SystemExtensions/)
   3. Finds a DEVELOPMENT provisioning profile on disk (filters out distribution profiles)
-  4. Embeds the profile and signs with ad-hoc identity
+  4. Embeds the profile and re-signs with the Apple Development identity from the keychain
         |
 Xcode installs the app+dext on your iPad
 ```

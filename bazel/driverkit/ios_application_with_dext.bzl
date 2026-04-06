@@ -49,13 +49,9 @@ def _ios_application_with_dext_impl(ctx):
     # Optional distribution signing inputs
     extra_inputs = []
     dext_profile_path = ""
-    dext_entitlements_path = ""
     if ctx.file.dext_provisioning_profile:
         dext_profile_path = ctx.file.dext_provisioning_profile.path
         extra_inputs.append(ctx.file.dext_provisioning_profile)
-    if ctx.file.dext_entitlements:
-        dext_entitlements_path = ctx.file.dext_entitlements.path
-        extra_inputs.append(ctx.file.dext_entitlements)
 
     cmd = """
 set -euo pipefail
@@ -65,7 +61,6 @@ trap 'rm -rf "$WORK"' EXIT
 
 SIGN_IDENTITY={sign_identity}
 DEXT_PROFILE={dext_profile}
-DEXT_ENTITLEMENTS={dext_entitlements}
 
 # Copy and extract base .ipa
 cp {app_archive} "$WORK/base.ipa"
@@ -176,7 +171,6 @@ cp "$WORK/output.ipa" "$EXECROOT"/{output}
         copy_commands = _gen_copy_commands(dext_files, dext_dir_name),
         sign_identity = _quote(sign_identity),
         dext_profile = _quote(dext_profile_path),
-        dext_entitlements = _quote(dext_entitlements_path),
         output = _quote(out_ipa.path),
         app_name = app_name,
     )
@@ -264,10 +258,6 @@ ios_application_with_dext = rule(
         "dext_provisioning_profile": attr.label(
             allow_single_file = [".mobileprovision", ".provisionprofile"],
             doc = "Distribution provisioning profile to embed in the dext (required for App Store).",
-        ),
-        "dext_entitlements": attr.label(
-            allow_single_file = [".entitlements", ".plist"],
-            doc = "Entitlements file for the dext (used with distribution signing).",
         ),
     },
     doc = "Embeds a .dext DriverKit extension into an ios_application .ipa bundle.",

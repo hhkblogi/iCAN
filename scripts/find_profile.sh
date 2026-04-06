@@ -37,14 +37,21 @@ for dir in "${PROFILE_DIRS[@]}"; do
     for f in "$dir"/*.mobileprovision "$dir"/*.provisionprofile; do
         [ -f "$f" ] || continue
         decoded=$(security cms -D -i "$f" 2>/dev/null) || continue
-        appid=$(echo "$decoded" | \
+        appid=$(printf '%s' "$decoded" | \
             xmllint --xpath '//key[text()="application-identifier"]/following-sibling::string[1]/text()' - 2>/dev/null) || continue
         if [ "$appid" != "$EXPECTED_APPID" ]; then
             continue
         fi
-        # Filter by profile type: dev profiles have ProvisionedDevices, appstore don't
-        if echo "$decoded" | grep -q '<key>ProvisionedDevices</key>'; then
-            profile_type="dev"
+        # Filter by profile type:
+        #   dev:      has ProvisionedDevices AND get-task-allow=true
+        #   appstore: no ProvisionedDevices (Ad Hoc profiles have ProvisionedDevices
+        #             but get-task-allow=false, so they're excluded from "dev")
+        if printf '%s' "$decoded" | grep -q '<key>ProvisionedDevices</key>'; then
+            if printf '%s' "$decoded" | grep -A1 '<key>get-task-allow</key>' | grep -q '<true/>'; then
+                profile_type="dev"
+            else
+                profile_type="adhoc"
+            fi
         else
             profile_type="appstore"
         fi
@@ -55,7 +62,7 @@ for dir in "${PROFILE_DIRS[@]}"; do
         # Use Python's plistlib to robustly parse the plist (including
         # multi-line base64 <data> blocks) and extract each cert's SHA-1
         # fingerprint directly.
-        profile_fps=$(echo "$decoded" | python3 -c '
+        profile_fps=$(printf '%s' "$decoded" | python3 -c '
 import sys, plistlib, hashlib
 try:
     d = plistlib.loads(sys.stdin.buffer.read())

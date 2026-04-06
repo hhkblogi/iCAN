@@ -153,9 +153,9 @@ proper entitlement`). If this happens:
 2. Keep only the Xcode-managed development profiles (named `iOS Team Provisioning Profile: ...`)
 3. Rebuild and deploy
 
-To identify which profiles are installed:
+To check whether matching development profiles are installed:
 ```bash
-# List all profiles for the iCAN bundle IDs
+# Presence check — copies the matching profile to /dev/null (exits 0 if found, 1 if not)
 scripts/find_profile.sh <TEAM_ID> com.<TEAM>.iCAN /dev/null dev
 scripts/find_profile.sh <TEAM_ID> com.<TEAM>.iCAN.driver /dev/null dev
 ```
