@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>iCAN USB CAN Driver</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -15,11 +17,13 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>OSBundleUsageDescription</key>
     <string>USB CAN driver for SLCAN, gs_usb, and PCAN adapters</string>
+    <key>OSMinimumDriverKitVersion</key>
+    <string>24.0.0</string>
 
     <!-- IOKit Matching -->
     <key>IOKitPersonalities</key>

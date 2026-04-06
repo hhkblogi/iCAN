@@ -79,40 +79,89 @@ if [ -z "$APP_DIR" ]; then
     exit 1
 fi
 
-# Create SystemExtensions directory
-mkdir -p "$APP_DIR/SystemExtensions/{dext_dir_name}"
-
-# Copy .dext files
-{copy_commands}
-
-DEXT_PATH="$APP_DIR/SystemExtensions/{dext_dir_name}"
-
-# Make all copied dext files writable (Bazel outputs are read-only)
-chmod -R u+w "$DEXT_PATH"
-
-# If a dext provisioning profile is provided, embed it and sign with distribution identity
+# Distribution vs ad-hoc path
 if [ -n "$DEXT_PROFILE" ] && [ "$SIGN_IDENTITY" != "-" ]; then
-    # Embed provisioning profile in the dext
-    cp "$EXECROOT/$DEXT_PROFILE" "$DEXT_PATH/embedded.mobileprovision"
-    chmod u+w "$DEXT_PATH/embedded.mobileprovision"
+    # --- App Store distribution path ---
 
-    # Sign dext with distribution identity + entitlements
-    if [ -n "$DEXT_ENTITLEMENTS" ]; then
-        /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
-            --entitlements "$EXECROOT/$DEXT_ENTITLEMENTS" \
-            --options runtime --timestamp=none "$DEXT_PATH"
-    else
-        /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
-            --options runtime --timestamp=none "$DEXT_PATH"
+    # Extract the dext's bundle ID from its Info.plist and use it as the
+    # final dext directory name (Apple requires dext bundle name to equal
+    # CFBundleIdentifier + .dext). The source bundle is named {dext_dir_name}.
+    SRC_DEXT_DIR="$APP_DIR/SystemExtensions/{dext_dir_name}"
+    mkdir -p "$SRC_DEXT_DIR"
+{copy_commands}
+    chmod -R u+w "$SRC_DEXT_DIR"
+
+    DEXT_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$SRC_DEXT_DIR/Info.plist")
+    FINAL_DEXT_NAME="$DEXT_BUNDLE_ID.dext"
+    FINAL_DEXT_PATH="$APP_DIR/SystemExtensions/$FINAL_DEXT_NAME"
+    if [ "{dext_dir_name}" != "$FINAL_DEXT_NAME" ]; then
+        mv "$SRC_DEXT_DIR" "$FINAL_DEXT_PATH"
     fi
 
-    # Re-sign only the top-level app bundle; the dext was already signed
-    # above with its own entitlements. Using --deep here would re-sign the
-    # dext without those entitlements and undo the previous step.
+    # Preserve the app's existing entitlements before re-signing. The outer
+    # ios_application target signs with proper entitlements (including
+    # application-identifier); we must re-apply them when we re-sign.
+    # The `:-` form writes clean XML to stdout.
+    APP_ENTITLEMENTS="$WORK/app_entitlements.plist"
+    /usr/bin/codesign -d --entitlements :- "$APP_DIR" 2>/dev/null > "$APP_ENTITLEMENTS"
+
+    # Build merged dext entitlements from the provisioning profile's
+    # allowed entitlements. Using the profile as the source of truth
+    # guarantees the bundle entitlements are a valid subset (e.g., USB
+    # transport VIDs must match exactly what Apple has approved).
+    # We keep only DriverKit-related keys, application-identifier, and
+    # team-identifier — other profile keys like beta-reports-active and
+    # keychain-access-groups don't belong in a dext binary.
+    DEXT_MERGED_ENT="$WORK/dext_entitlements.plist"
+    python3 -c "
+import sys, plistlib, subprocess
+with open('$EXECROOT/$DEXT_PROFILE', 'rb') as f:
+    cms = f.read()
+profile_xml = subprocess.check_output(['security', 'cms', '-D', '-i', '/dev/stdin'], input=cms)
+profile = plistlib.loads(profile_xml)
+profile_ents = profile.get('Entitlements', {{}})
+
+# Keys to carry over to the signed dext entitlements
+allowed_keys = {{
+    'application-identifier',
+    'com.apple.developer.team-identifier',
+    'com.apple.developer.driverkit',
+    'com.apple.developer.driverkit.allow-third-party-userclients',
+    'com.apple.developer.driverkit.transport.usb',
+    'com.apple.developer.driverkit.transport.hid',
+    'com.apple.developer.driverkit.family.networking',
+    'com.apple.developer.driverkit.family.serial',
+}}
+ents = {{k: v for k, v in profile_ents.items() if k in allowed_keys}}
+
+with open('$DEXT_MERGED_ENT', 'wb') as f:
+    plistlib.dump(ents, f)
+"
+
+    # Embed provisioning profile in the dext
+    cp "$EXECROOT/$DEXT_PROFILE" "$FINAL_DEXT_PATH/embedded.mobileprovision"
+    chmod u+w "$FINAL_DEXT_PATH/embedded.mobileprovision"
+
+    # Sign the dext with merged entitlements (inner bundle first).
+    # --generate-entitlement-der: embed DER-encoded entitlements (required by App Store)
+    # --timestamp: use Apple's TSA for distribution (not --timestamp=none)
     /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
-        --options runtime --timestamp=none "$APP_DIR"
+        --entitlements "$DEXT_MERGED_ENT" \
+        --options runtime --timestamp \
+        --generate-entitlement-der "$FINAL_DEXT_PATH"
+
+    # Re-sign the outer app with its original entitlements (do NOT use --deep,
+    # which would re-sign the dext and strip its entitlements).
+    /usr/bin/codesign --force --sign "$SIGN_IDENTITY" \
+        --entitlements "$APP_ENTITLEMENTS" \
+        --options runtime --timestamp \
+        --generate-entitlement-der "$APP_DIR"
 else
-    # Development/ad-hoc path
+    # --- Development / ad-hoc path ---
+    mkdir -p "$APP_DIR/SystemExtensions/{dext_dir_name}"
+{copy_commands}
+    DEXT_PATH="$APP_DIR/SystemExtensions/{dext_dir_name}"
+    chmod -R u+w "$DEXT_PATH"
     /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$DEXT_PATH" || true
     /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$APP_DIR" || true
 fi
