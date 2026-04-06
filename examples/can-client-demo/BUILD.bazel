@@ -1,0 +1,87 @@
+# CAN Client Demo — Third-party app that uses iCAN's USB CAN driver
+#
+# This demonstrates that a separate app (different bundle ID) can connect
+# to the USBCANDriver dext installed by iCAN and read/write CAN frames.
+
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load(
+    "@rules_xcodeproj//xcodeproj:defs.bzl",
+    "top_level_target",
+    "xcodeproj",
+    "xcode_provisioning_profile",
+)
+load("//:team_config.bzl", "TEAM_ID")
+
+package(default_visibility = ["//visibility:public"])
+
+DEMO_BUNDLE_ID = "com.hhkblogi.ican.examples.can-client-demo"
+
+# Provisioning
+genrule(
+    name = "local_profile",
+    outs = ["demo.mobileprovision"],
+    cmd = "$(location //scripts:find_profile.sh) " + TEAM_ID + " " + DEMO_BUNDLE_ID + " $@ dev",
+    tools = ["//scripts:find_profile.sh"],
+    local = True,
+    tags = ["no-cache"],
+)
+
+xcode_provisioning_profile(
+    name = "xcode_profile",
+    managed_by_xcode = True,
+    provisioning_profile = ":local_profile",
+    team_id = TEAM_ID,
+)
+
+# C++ bridge (exposes CANClient to Swift via bridging header)
+objc_library(
+    name = "DemoObjC",
+    hdrs = ["BridgingHeader.h"],
+    copts = ["-std=c++23"],
+    includes = ["."],
+    sdk_frameworks = ["IOKit"],
+    tags = ["manual"],
+    deps = ["//can_client"],
+)
+
+# Swift app
+swift_library(
+    name = "DemoLib",
+    srcs = glob(["app/**/*.swift"]),
+    copts = [
+        "-cxx-interoperability-mode=default",
+        "-import-objc-header",
+        "$(execpath BridgingHeader.h)",
+        "-default-isolation=MainActor",
+    ],
+    module_name = "CANClientDemo",
+    swiftc_inputs = ["BridgingHeader.h"],
+    tags = ["manual"],
+    deps = [":DemoObjC"],
+)
+
+# iPad app
+ios_application(
+    name = "app_ios",
+    app_icons = [],
+    bundle_id = DEMO_BUNDLE_ID,
+    entitlements = "entitlements.plist",
+    families = ["ipad"],
+    infoplists = ["Info.plist"],
+    minimum_os_version = "26.0",
+    provisioning_profile = ":xcode_profile",
+    deps = [":DemoLib"],
+)
+
+# Xcode project (separate from iCAN's ican.xcodeproj)
+xcodeproj(
+    name = "xcodeproj",
+    project_name = "can-client-demo",
+    top_level_targets = [
+        top_level_target(
+            label = "//examples/can-client-demo:app_ios",
+            target_environments = ["device"],
+        ),
+    ],
+)
