@@ -19,3 +19,11 @@ build:driverkit --define=DRIVERKIT_SDK=1
 # Debug configuration
 build:dbg --compilation_mode=dbg
 build:opt --compilation_mode=opt
+
+# =============================================================================
+# App Store submission (use: bazel build //:app_ios_appstore_with_dext --config=appstore)
+# =============================================================================
+build:appstore --compilation_mode=opt
+build:appstore --copt=-O3 --cxxopt=-O3
+build:appstore --copt=-DNDEBUG --cxxopt=-DNDEBUG
+build:appstore --apple_generate_dsym

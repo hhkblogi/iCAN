@@ -8,6 +8,7 @@ exports_files(
         "usb_can_user_client.iig",
         "usb_can_user_client.cpp",
         "Info.plist",
+        "USBCANDriver.entitlements",
     ],
     visibility = ["//visibility:public"],
 )
