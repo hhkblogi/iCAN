@@ -130,6 +130,44 @@ bazel test //...                             # All tests
 - The pre-commit hook in `.githooks/` prevents accidental Team ID and `.mobileprovision` commits
 - `scripts/embed_dext.sh` is the Xcode post-build hook that builds the .dext via Bazel, embeds it into the app bundle, and re-signs
 
+### Development vs Distribution Profiles
+
+The app uses two separate sets of provisioning profiles:
+
+| | Development | App Store Distribution |
+|---|---|---|
+| **Purpose** | Day-to-day builds on your iPad via Xcode | App Store / TestFlight submission |
+| **Build target** | `//:app_ios` (via Xcode) | `//:app_ios_appstore_with_dext --config=appstore` |
+| **USB VIDs** | Wildcard `*` (all adapters) | Specific VIDs (requires Apple approval per VID) |
+| **Signing** | Apple Development cert | Apple Distribution cert |
+| **Profile type** | Xcode-managed (auto) | Manual (downloaded from portal) |
+
+**Important:** Development and distribution provisioning profiles must not be mixed. If you download
+new distribution profiles from the Apple Developer Portal, they may conflict with your development
+profiles and cause install failures (`0xe800801f: Attempted to install a Beta profile without the
+proper entitlement`). If this happens:
+
+1. Remove the distribution profiles from `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`
+2. Keep only the Xcode-managed development profiles (named `iOS Team Provisioning Profile: ...`)
+3. Rebuild and deploy
+
+To identify which profiles are installed:
+```bash
+# List all profiles for the iCAN bundle IDs
+scripts/find_profile.sh <TEAM_ID> com.<TEAM>.iCAN /dev/null dev
+scripts/find_profile.sh <TEAM_ID> com.<TEAM>.iCAN.driver /dev/null dev
+```
+
+### App Store Submission
+
+Requires Apple-approved DriverKit USB Transport entitlements (per VID) and an Apple Distribution
+certificate. See `BUILD.bazel` for the `app_ios_appstore_with_dext` target configuration.
+
+```bash
+bazel build //:app_ios_appstore_with_dext --config=appstore
+# Output: bazel-bin/app_ios_appstore_with_dext.ipa → upload via Transporter
+```
+
 ## Protocol Attribution
 
 The USB protocol codecs in `usb_can_driver/codecs/` are clean-room implementations.
