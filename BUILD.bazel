@@ -8,7 +8,12 @@ load(
     "xcodeproj",
     "xcode_provisioning_profile",
 )
-load("//:team_config.bzl", "APPSTORE_IDENTITY", "TEAM_ID")
+load("//:team_config.bzl", "TEAM_ID")
+
+# Default App Store signing identity (ad-hoc). Override by adding
+# APPSTORE_IDENTITY to your team_config.bzl — see template for format.
+# Only needed for //:app_ios_appstore_with_dext builds.
+APPSTORE_IDENTITY = "-"
 
 package(default_visibility = ["//visibility:public"])
 
