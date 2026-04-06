@@ -122,6 +122,8 @@ bazel test //...                             # All tests
 
 ## Signing & Deployment
 
+> See [docs/build-and-signing.md](docs/build-and-signing.md) for the full guide on build paths, provisioning profiles, and troubleshooting.
+
 - iPad-only, minimum iPadOS 26.0
 - Team ID loaded from `team_config.bzl` (gitignored — never hardcode)
 - App bundle: `com.<TEAM>.iCAN`
