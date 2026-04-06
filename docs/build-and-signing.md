@@ -73,7 +73,19 @@ Upload to App Store Connect via Transporter
 **Key files:**
 - `bazel/driverkit/ios_application_with_dext.bzl` — Bazel rule for embedding + signing
 - `scripts/find_profile.sh` — profile discovery with type filtering (dev/appstore)
-- `BUILD.bazel` — defines `app_ios_appstore` and `app_ios_appstore_with_dext` targets
+- `appstore.bzl` — conditionally registers `app_ios_appstore` and `app_ios_appstore_with_dext`
+  (only when `APPSTORE_IDENTITY` is set in `team_config.bzl`)
+
+**Setup:**
+
+Set `APPSTORE_IDENTITY` in `team_config.bzl` to your distribution signing identity:
+```python
+APPSTORE_IDENTITY = "Apple Distribution: YOUR NAME (TEAM_ID)"
+```
+
+When `APPSTORE_IDENTITY` is empty (the default), the App Store targets are not
+registered, so `bazel build //...` and `bazel run //:xcodeproj` work without any
+distribution signing setup.
 
 **Commands:**
 ```bash
