@@ -1,0 +1,173 @@
+import XCTest
+import Foundation
+
+final class CANSchemaSwiftTests: XCTestCase {
+    func testLoadsFixtureDBCTextFromFile() throws {
+        var schema = CANSchema()
+        let dbc = try loadFixtureDBC()
+
+        let loaded = dbc.withCString { ptr in
+            schema.loadDBCText(ptr)
+        }
+
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(schema.hasSchema())
+    }
+
+    func testDecodeStandardMessageFromFixtureFile() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 291
+        frame.len = 8
+        withUnsafeMutableBytes(of: &frame.data) { buffer in
+            buffer[0] = 0x34
+            buffer[1] = 0x12
+            buffer[2] = 100
+        }
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 4)
+        var signalCount = 0
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_OK.rawValue))
+        XCTAssertTrue(message.matched)
+        XCTAssertEqual(signalCount, 2)
+        XCTAssertEqual(stringView(message.messageName, message.messageNameLength), "Demo")
+        XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Speed")
+        XCTAssertEqual(stringView(signals[0].unit, signals[0].unitLength), "km/h")
+        XCTAssertEqual(signals[0].value, 4660.0)
+        XCTAssertEqual(stringView(signals[1].name, signals[1].nameLength), "Temp")
+        XCTAssertEqual(stringView(signals[1].unit, signals[1].unitLength), "C")
+        XCTAssertEqual(signals[1].value, 10.0)
+    }
+
+    func testDecodeExtendedMessageFromFixtureFile() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 0x80000000 | 419385573
+        frame.len = 8
+        withUnsafeMutableBytes(of: &frame.data) { buffer in
+            buffer[0] = 7
+        }
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 4)
+        var signalCount = 0
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_OK.rawValue))
+        XCTAssertTrue(message.matched)
+        XCTAssertEqual(signalCount, 1)
+        XCTAssertEqual(stringView(message.messageName, message.messageNameLength), "ExtStatus")
+        XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Mode")
+        XCTAssertEqual(signals[0].value, 7.0)
+    }
+
+    func testDecodeReportsNoMatchForUnknownFrame() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 0x456
+        frame.len = 8
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 1)
+        var signalCount = 99
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_NO_MATCH.rawValue))
+        XCTAssertFalse(message.matched)
+        XCTAssertEqual(signalCount, 0)
+    }
+
+    func testDecodeReportsMissingSchema() {
+        let schema = CANSchema()
+        var frame = canfd_frame()
+        frame.can_id = 291
+        frame.len = 8
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 2)
+        var signalCount = 7
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_NOT_READY.rawValue))
+        XCTAssertFalse(message.matched)
+        XCTAssertEqual(signalCount, 0)
+        if let error = schema.lastError() {
+            XCTAssertEqual(String(cString: error), "schema is not loaded")
+        } else {
+            XCTFail("expected fallback error")
+        }
+    }
+
+    private func loadSchema(_ schema: inout CANSchema) throws {
+        let dbc = try loadFixtureDBC()
+
+        let loaded = dbc.withCString { ptr in
+            schema.loadDBCText(ptr)
+        }
+        XCTAssertTrue(loaded)
+    }
+
+    private func loadFixtureDBC() throws -> String {
+        let env = ProcessInfo.processInfo.environment
+        let testSrcDir = env["TEST_SRCDIR"] ?? ""
+        let testWorkspace = env["TEST_WORKSPACE"] ?? ""
+        let candidates = [
+            "\(testSrcDir)/_main/can_schema/testdata/demo.dbc",
+            "\(testSrcDir)/\(testWorkspace)/can_schema/testdata/demo.dbc",
+        ]
+
+        for path in candidates where !path.isEmpty {
+            if let data = FileManager.default.contents(atPath: path),
+               let text = String(data: data, encoding: .utf8) {
+                return text
+            }
+        }
+
+        throw NSError(domain: "CANSchemaSwiftTests", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "failed to resolve can_schema/testdata/demo.dbc from Bazel runfiles",
+        ])
+    }
+
+    private func stringView(_ ptr: UnsafePointer<CChar>?, _ len: Int) -> String {
+        guard let ptr else { return "" }
+        let buffer = UnsafeBufferPointer(start: UnsafeRawPointer(ptr).assumingMemoryBound(to: UInt8.self), count: len)
+        return String(decoding: buffer, as: UTF8.self)
+    }
+}

@@ -1,0 +1,18 @@
+VERSION "1.0"
+
+NS_ :
+
+BS_:
+
+BU_: ECM
+
+BO_ 291 Demo : 8 ECM
+ SG_ Speed : 0|16@1+ (1,0) [0|65535] "km/h" ECM
+ SG_ Temp : 16|8@1- (0.5,-40) [-40|87.5] "C" ECM
+
+BO_ 512 Battery : 8 ECM
+ SG_ Voltage : 0|16@1+ (0.01,0) [0|655.35] "V" ECM
+ SG_ Current : 16|16@1- (0.1,0) [-3276.8|3276.7] "A" ECM
+
+BO_ 419385573 ExtStatus : 8 ECM
+ SG_ Mode : 0|8@1+ (1,0) [0|255] "" ECM
