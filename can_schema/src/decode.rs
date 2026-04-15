@@ -14,6 +14,9 @@ impl<'a> RuntimeMessageRef<'a> {
     }
 
     pub fn decode_signal_value(&self, index: usize, payload: &[u8]) -> Option<DecodedSignalValue> {
+        if !self.is_signal_active(index, payload)? {
+            return None;
+        }
         self.signal(index)?.decode(payload)
     }
 

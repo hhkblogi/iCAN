@@ -138,7 +138,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         let data = &(*frame).data;
         &data[..payload_len]
     };
-    if message.signal_count() > 0 && payload_len < usize::from(message.dlc()) {
+    if payload_len < usize::from(message.dlc()) {
         schema.state.set_last_error("frame payload shorter than DBC message DLC");
         return status_to_ffi(SchemaStatus::InvalidArgument);
     }

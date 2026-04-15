@@ -370,6 +370,27 @@ TEST(CANSchemaTest, DecodeRejectsRemoteAndErrorFrames) {
     }
 }
 
+TEST(CANSchemaTest, DecodeRejectsTruncatedZeroSignalMessage) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 700;
+    frame.len = 0;
+
+    CANSchemaDecodedMessage message;
+    size_t signalCount = 99;
+
+    const int32_t status = schema.decode(frame, &message, nullptr, 0, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_INVALID_ARGUMENT);
+    EXPECT_FALSE(message.matched);
+    EXPECT_EQ(signalCount, 0u);
+    EXPECT_STREQ(schema.lastError(), "frame payload shorter than DBC message DLC");
+}
+
 TEST(CANSchemaTest, DecodeReportsMissingSchema) {
     CANSchema schema;
 
