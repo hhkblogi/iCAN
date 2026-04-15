@@ -1,4 +1,4 @@
-use crate::ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr};
+use crate::ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr, SignalValueType};
 
 const CAN_EFF_FLAG: u32 = 0x8000_0000;
 const CAN_SFF_MASK: u32 = 0x0000_07ff;
@@ -38,6 +38,12 @@ impl SchemaIr {
 
             if line.starts_with("VAL_ ") {
                 parse_value_choices_line(&mut messages, line)
+                    .map_err(|err| format!("line {}: {}", line_no + 1, err))?;
+                continue;
+            }
+
+            if line.starts_with("SIG_VALTYPE_ ") {
+                parse_signal_value_type_line(&mut messages, line)
                     .map_err(|err| format!("line {}: {}", line_no + 1, err))?;
                 continue;
             }
@@ -116,6 +122,7 @@ fn parse_signal_line(line: &str) -> Result<SignalIr, String> {
         start_bit,
         bit_len,
         byte_order,
+        value_type: SignalValueType::Integer,
         is_signed,
         factor,
         offset,
@@ -175,6 +182,55 @@ fn parse_value_choices_line(messages: &mut [MessageIr], line: &str) -> Result<()
             .ok_or_else(|| "choice label must be quoted".to_owned())?;
         signal.choices.push(ChoiceIr { raw_value, label });
     }
+
+    Ok(())
+}
+
+fn parse_signal_value_type_line(messages: &mut [MessageIr], line: &str) -> Result<(), String> {
+    let rest = line
+        .strip_prefix("SIG_VALTYPE_ ")
+        .ok_or_else(|| "signal value type line must start with SIG_VALTYPE_".to_owned())?;
+    let rest = rest
+        .strip_suffix(';')
+        .ok_or_else(|| "signal value type line must end with ';'".to_owned())?;
+    let (left, right) = rest
+        .split_once(':')
+        .ok_or_else(|| "signal value type line must contain ':'".to_owned())?;
+
+    let mut left_tokens = left.split_whitespace();
+    let raw_id = left_tokens
+        .next()
+        .ok_or_else(|| "signal value type line must contain a message id".to_owned())?;
+    let signal_name = left_tokens
+        .next()
+        .ok_or_else(|| "signal value type line must contain a signal name".to_owned())?;
+    let raw_id = raw_id
+        .parse::<u32>()
+        .map_err(|_| "signal value type message id must be an unsigned integer".to_owned())?;
+    let (frame_id, is_extended) = classify_frame_id(raw_id)?;
+
+    let message = messages
+        .iter_mut()
+        .find(|message| message.frame_id == frame_id && message.is_extended == is_extended)
+        .ok_or_else(|| format!("signal value type line references unknown message id {}", frame_id))?;
+    let signal = message
+        .signals
+        .iter_mut()
+        .find(|signal| signal.name == signal_name)
+        .ok_or_else(|| format!("signal value type line references unknown signal {}", signal_name))?;
+
+    let value_type = right.trim();
+    signal.value_type = match value_type {
+        "0" => SignalValueType::Integer,
+        "1" => SignalValueType::Float32,
+        "2" => SignalValueType::Float64,
+        _ => {
+            return Err(format!(
+                "unsupported SIG_VALTYPE_ value {}; expected 0, 1, or 2",
+                value_type
+            ))
+        }
+    };
 
     Ok(())
 }

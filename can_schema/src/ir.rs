@@ -4,6 +4,13 @@ pub enum ByteOrder {
     BigEndian,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SignalValueType {
+    Integer,
+    Float32,
+    Float64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceIr {
     pub raw_value: i64,
@@ -23,6 +30,7 @@ pub struct SignalIr {
     pub start_bit: u16,
     pub bit_len: u16,
     pub byte_order: ByteOrder,
+    pub value_type: SignalValueType,
     pub is_signed: bool,
     pub factor: f64,
     pub offset: f64,

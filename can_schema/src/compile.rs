@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ir::{ByteOrder, MuxRoleIr, SchemaIr, SignalIr};
+use crate::ir::{ByteOrder, MuxRoleIr, SchemaIr, SignalIr, SignalValueType};
 use crate::runtime::{
     ChoiceDesc, MessageDesc, MessageLookupEntry, RuntimeSchema, SignalDesc, StringRef,
     MESSAGE_FLAG_EXTENDED, SIGNAL_FLAG_LITTLE_ENDIAN, SIGNAL_FLAG_MULTIPLEXED,
-    SIGNAL_FLAG_MULTIPLEXOR, SIGNAL_FLAG_SIGNED,
+    SIGNAL_FLAG_MULTIPLEXOR, SIGNAL_FLAG_SIGNED, SIGNAL_FLAG_FLOAT32, SIGNAL_FLAG_FLOAT64,
 };
 
 impl RuntimeSchema {
@@ -91,10 +91,17 @@ impl SignalDesc {
             });
         }
 
+        validate_signal_value_type(signal)?;
+
         Ok(Self {
             start_bit: signal.start_bit,
             bit_len: signal.bit_len,
-            flags: signal_flags(signal.byte_order, signal.is_signed, signal.mux_role),
+            flags: signal_flags(
+                signal.byte_order,
+                signal.is_signed,
+                signal.mux_role,
+                signal.value_type,
+            ),
             factor: signal.factor,
             offset: signal.offset,
             name: strings.intern(&signal.name)?,
@@ -190,7 +197,12 @@ fn message_flags(is_extended: bool) -> u16 {
     }
 }
 
-fn signal_flags(byte_order: ByteOrder, is_signed: bool, mux_role: MuxRoleIr) -> u16 {
+fn signal_flags(
+    byte_order: ByteOrder,
+    is_signed: bool,
+    mux_role: MuxRoleIr,
+    value_type: SignalValueType,
+) -> u16 {
     let mut flags = 0;
     if byte_order == ByteOrder::LittleEndian {
         flags |= SIGNAL_FLAG_LITTLE_ENDIAN;
@@ -203,5 +215,34 @@ fn signal_flags(byte_order: ByteOrder, is_signed: bool, mux_role: MuxRoleIr) -> 
         MuxRoleIr::Multiplexed { .. } => flags |= SIGNAL_FLAG_MULTIPLEXED,
         MuxRoleIr::None => {}
     }
+    match value_type {
+        SignalValueType::Integer => {}
+        SignalValueType::Float32 => flags |= SIGNAL_FLAG_FLOAT32,
+        SignalValueType::Float64 => flags |= SIGNAL_FLAG_FLOAT64,
+    }
     flags
+}
+
+fn validate_signal_value_type(signal: &SignalIr) -> Result<(), String> {
+    match signal.value_type {
+        SignalValueType::Integer => Ok(()),
+        SignalValueType::Float32 => {
+            if signal.bit_len != 32 {
+                return Err(format!(
+                    "signal {} declares float32 value type but uses {} bits",
+                    signal.name, signal.bit_len
+                ));
+            }
+            Ok(())
+        }
+        SignalValueType::Float64 => {
+            if signal.bit_len != 64 {
+                return Err(format!(
+                    "signal {} declares float64 value type but uses {} bits",
+                    signal.name, signal.bit_len
+                ));
+            }
+            Ok(())
+        }
+    }
 }

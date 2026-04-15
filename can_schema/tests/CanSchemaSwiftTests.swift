@@ -26,6 +26,23 @@ final class CANSchemaSwiftTests: XCTestCase {
         XCTAssertFalse(schema.hasSchema())
     }
 
+    func testAcceptsNonUtf8DBCBytes() {
+        var schema = CANSchema()
+        var dbc = Array("VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n\nBO_ 291 Demo : 8 ECM\n SG_ Temp : 0|8@1+ (1,0) [0|255] \"".utf8)
+        dbc.append(0xB0)
+        dbc.append(contentsOf: Array("C\" ECM\n".utf8))
+
+        let loaded = dbc.withUnsafeBytes { buffer in
+            schema.loadDBCText(
+                buffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                buffer.count
+            )
+        }
+
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(schema.hasSchema())
+    }
+
     func testFailedReloadClearsPreviousSchema() throws {
         var schema = CANSchema()
         try loadSchema(&schema)
@@ -123,6 +140,40 @@ final class CANSchemaSwiftTests: XCTestCase {
         XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Mode")
         XCTAssertEqual(signals[0].value, 7.0)
         XCTAssertEqual(stringView(signals[0].displayValue, signals[0].displayValueLength), "Active")
+    }
+
+    func testDecodeFloatMessageFromFixtureFile() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 800
+        frame.len = 8
+        withUnsafeMutableBytes(of: &frame.data) { buffer in
+            buffer[0] = 0x00
+            buffer[1] = 0x00
+            buffer[2] = 0x80
+            buffer[3] = 0x3f
+        }
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 2)
+        var signalCount = 0
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_OK.rawValue))
+        XCTAssertTrue(message.matched)
+        XCTAssertEqual(signalCount, 1)
+        XCTAssertEqual(stringView(message.messageName, message.messageNameLength), "FloatStatus")
+        XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Ratio")
+        XCTAssertEqual(signals[0].value, 1.0)
     }
 
     func testDecodeMultiplexedMessageFromFixtureFile() throws {
