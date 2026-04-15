@@ -25,6 +25,7 @@ rust.toolchain(
     extra_target_triples = [
         "aarch64-apple-ios",
         "aarch64-apple-ios-sim",
+        "x86_64-apple-ios",
     ],
 )
 use_repo(rust, "rust_toolchains")

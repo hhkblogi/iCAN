@@ -2,7 +2,7 @@ extern crate can_schema;
 
 use std::fs;
 
-use can_schema::{ByteOrder, MuxRoleIr, SchemaIr, SchemaState};
+use can_schema::{ByteOrder, MuxRoleIr, SchemaIr, SchemaState, SignalValueType};
 
 const DUPLICATE_MESSAGE_DBC: &str = r#"VERSION "1.0"
 
@@ -67,6 +67,21 @@ fn rejects_dbc_without_any_messages() {
 }
 
 #[test]
+fn accepts_non_utf8_dbc_bytes() {
+    let mut dbc =
+        b"VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n\nBO_ 291 Demo : 8 ECM\n SG_ Temp : 0|8@1+ (1,0) [0|255] \""
+            .to_vec();
+    dbc.push(0xB0);
+    dbc.extend_from_slice(b"C\" ECM\n");
+    let schema = SchemaState::load_dbc_text(&dbc).expect("Latin-1 bytes should load lossy");
+
+    assert!(schema.has_schema());
+    let message = schema.find_message(291, false).expect("Demo should exist");
+    let signal = message.signal(0).expect("Temp should exist");
+    assert_eq!(signal.unit(), Some("\u{FFFD}C"));
+}
+
+#[test]
 fn supports_basic_multiplexed_signal_definitions() {
     let schema = load_fixture();
     let muxed = schema
@@ -99,7 +114,7 @@ fn parses_fixture_file_into_ir() {
     let dbc = load_fixture_dbc();
     let schema_ir = SchemaIr::parse_dbc(&dbc).expect("fixture DBC should parse");
 
-    assert_eq!(schema_ir.messages.len(), 5);
+    assert_eq!(schema_ir.messages.len(), 7);
     assert_eq!(schema_ir.messages[0].name, "Demo");
     assert_eq!(schema_ir.messages[0].signals.len(), 2);
     assert_eq!(schema_ir.messages[0].signals[0].byte_order, ByteOrder::LittleEndian);
@@ -110,6 +125,10 @@ fn parses_fixture_file_into_ir() {
     assert_eq!(schema_ir.messages[3].name, "MultiStatus");
     assert_eq!(schema_ir.messages[4].name, "Empty");
     assert_eq!(schema_ir.messages[4].signals.len(), 0);
+    assert_eq!(schema_ir.messages[5].name, "FloatStatus");
+    assert_eq!(schema_ir.messages[5].signals[0].value_type, SignalValueType::Float32);
+    assert_eq!(schema_ir.messages[6].name, "DoubleStatus");
+    assert_eq!(schema_ir.messages[6].signals[0].value_type, SignalValueType::Float64);
 }
 
 #[test]
@@ -117,7 +136,7 @@ fn loads_fixture_and_reports_max_signals() {
     let schema = load_fixture();
     assert!(schema.has_schema());
     assert_eq!(schema.max_signals(), 3);
-    assert_eq!(schema.schema_ir().messages.len(), 5);
+    assert_eq!(schema.schema_ir().messages.len(), 7);
 }
 
 #[test]
@@ -150,6 +169,20 @@ fn runtime_schema_supports_lookup_and_borrowed_metadata() {
     let page = multi.signal(0).expect("Page signal should be present");
     assert!(page.is_multiplexor());
     assert_eq!(page.display_label_for_raw(1, Some(1)), Some("Thermal"));
+
+    let float_message = runtime
+        .find_message(800, false)
+        .expect("FloatStatus should be present");
+    let ratio = float_message.signal(0).expect("Ratio signal should be present");
+    assert_eq!(ratio.name(), "Ratio");
+
+    let double_message = runtime
+        .find_message(801, false)
+        .expect("DoubleStatus should be present");
+    let precision = double_message
+        .signal(0)
+        .expect("Precision signal should be present");
+    assert_eq!(precision.name(), "Precision");
 }
 
 #[test]
@@ -197,6 +230,29 @@ fn decodes_extended_message_signal_from_file() {
 
     let mode = message.decode_signal(0, &payload).expect("Mode should decode");
     assert_eq!(mode, 7.0);
+}
+
+#[test]
+fn decodes_float_and_double_signals_from_file() {
+    let schema = load_fixture();
+
+    let float_message = schema
+        .find_message(800, false)
+        .expect("FloatStatus should be present");
+    let float_payload = [0x00, 0x00, 0x80, 0x3f, 0, 0, 0, 0];
+    let ratio = float_message
+        .decode_signal_value(0, &float_payload)
+        .expect("Ratio should decode");
+    assert_eq!(ratio.engineering_value, 1.0);
+
+    let double_message = schema
+        .find_message(801, false)
+        .expect("DoubleStatus should be present");
+    let double_payload = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x3f];
+    let precision = double_message
+        .decode_signal_value(0, &double_payload)
+        .expect("Precision should decode");
+    assert_eq!(precision.engineering_value, 1.5);
 }
 
 #[test]

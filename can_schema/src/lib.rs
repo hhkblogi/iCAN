@@ -10,7 +10,7 @@ mod runtime;
 mod status;
 
 pub use decode::DecodedSignalValue;
-pub use ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr};
+pub use ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr, SignalValueType};
 pub use runtime::{RuntimeMessageRef, RuntimeSchema, RuntimeSignalRef, StringRef};
 pub use status::SchemaStatus;
 
@@ -31,9 +31,8 @@ impl SchemaState {
             return Err("DBC text must not be empty".to_owned());
         }
 
-        let text = std::str::from_utf8(bytes)
-            .map_err(|_| "DBC text must be valid UTF-8".to_owned())?;
-        let schema_ir = SchemaIr::parse_dbc(text)?;
+        let text = String::from_utf8_lossy(bytes);
+        let schema_ir = SchemaIr::parse_dbc(text.as_ref())?;
         let runtime = RuntimeSchema::from_ir(&schema_ir)?;
 
         Ok(Self {

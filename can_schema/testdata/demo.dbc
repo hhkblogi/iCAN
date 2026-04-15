@@ -25,3 +25,11 @@ BO_ 600 MultiStatus : 8 ECM
 VAL_ 600 Page 0 "Drive" 1 "Thermal";
 
 BO_ 700 Empty : 8 ECM
+
+BO_ 800 FloatStatus : 8 ECM
+ SG_ Ratio : 0|32@1+ (1,0) [0|0] "" ECM
+SIG_VALTYPE_ 800 Ratio : 1;
+
+BO_ 801 DoubleStatus : 8 ECM
+ SG_ Precision : 0|64@1+ (1,0) [0|0] "" ECM
+SIG_VALTYPE_ 801 Precision : 2;

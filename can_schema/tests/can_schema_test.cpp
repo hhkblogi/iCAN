@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <cstring>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "rules_cc/cc/runfiles/runfiles.h"
@@ -74,6 +75,24 @@ TEST(CANSchemaTest, RejectsDBCWithoutMessages) {
     EXPECT_FALSE(schema.loadDBCText(dbc));
     EXPECT_FALSE(schema.hasSchema());
     EXPECT_STREQ(schema.lastError(), "failed to create can_schema handle");
+}
+
+TEST(CANSchemaTest, AcceptsNonUtf8DBCBytes) {
+    CANSchema schema;
+    std::vector<uint8_t> dbc = {
+        'V','E','R','S','I','O','N',' ','"','1','.','0','"','\n','\n',
+        'N','S','_',' ',':','\n','\n',
+        'B','S','_',':','\n','\n',
+        'B','U','_',':',' ','E','C','M','\n','\n',
+        'B','O','_',' ','2','9','1',' ','D','e','m','o',' ',':',' ','8',' ','E','C','M','\n',
+        ' ','S','G','_',' ','T','e','m','p',' ',':',' ','0','|','8','@','1','+',' ',
+        '(','1',',','0',')',' ','[','0','|','2','5','5',']',' ','"'
+    };
+    dbc.push_back(0xB0);
+    dbc.insert(dbc.end(), {'C','"',' ','E','C','M','\n'});
+
+    EXPECT_TRUE(schema.loadDBCText(dbc.data(), dbc.size()));
+    EXPECT_TRUE(schema.hasSchema());
 }
 
 TEST(CANSchemaTest, FailedReloadClearsPreviousSchema) {
@@ -150,6 +169,33 @@ TEST(CANSchemaTest, DecodeReturnsChoiceDisplayLabel) {
     ASSERT_EQ(signalCount, 1u);
     EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Mode");
     EXPECT_EQ(viewOf(signals[0].displayValue, signals[0].displayValueLength), "Active");
+}
+
+TEST(CANSchemaTest, DecodeReturnsFloatSignalValues) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 800;
+    frame.data[0] = 0x00;
+    frame.data[1] = 0x00;
+    frame.data[2] = 0x80;
+    frame.data[3] = 0x3f;
+
+    CANSchemaDecodedMessage message;
+    CANSchemaDecodedSignal signals[2] = {};
+    size_t signalCount = 0;
+
+    const int32_t status = schema.decode(frame, &message, signals, 2, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_OK);
+    EXPECT_TRUE(message.matched);
+    EXPECT_EQ(viewOf(message.messageName, message.messageNameLength), "FloatStatus");
+    ASSERT_EQ(signalCount, 1u);
+    EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Ratio");
+    EXPECT_DOUBLE_EQ(signals[0].value, 1.0);
 }
 
 TEST(CANSchemaTest, MoveConstructionPreservesLoadedSchema) {

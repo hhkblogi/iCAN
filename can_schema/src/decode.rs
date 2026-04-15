@@ -44,6 +44,24 @@ impl<'a> RuntimeSignalRef<'a> {
             }
         };
 
+        if desc.is_float32() {
+            let numeric = f32::from_bits(u32::try_from(raw).ok()?) as f64;
+            return Some(DecodedSignalValue {
+                raw_unsigned: raw,
+                raw_signed: None,
+                engineering_value: numeric * desc.factor + desc.offset,
+            });
+        }
+
+        if desc.is_float64() {
+            let numeric = f64::from_bits(raw);
+            return Some(DecodedSignalValue {
+                raw_unsigned: raw,
+                raw_signed: None,
+                engineering_value: numeric * desc.factor + desc.offset,
+            });
+        }
+
         let raw_signed = if desc.is_signed() {
             Some(sign_extend(raw, usize::from(desc.bit_len))?)
         } else {

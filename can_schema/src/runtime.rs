@@ -3,6 +3,8 @@ pub(crate) const SIGNAL_FLAG_LITTLE_ENDIAN: u16 = 1 << 0;
 pub(crate) const SIGNAL_FLAG_SIGNED: u16 = 1 << 1;
 pub(crate) const SIGNAL_FLAG_MULTIPLEXOR: u16 = 1 << 2;
 pub(crate) const SIGNAL_FLAG_MULTIPLEXED: u16 = 1 << 3;
+pub(crate) const SIGNAL_FLAG_FLOAT32: u16 = 1 << 4;
+pub(crate) const SIGNAL_FLAG_FLOAT64: u16 = 1 << 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StringRef {
@@ -201,6 +203,14 @@ impl<'a> RuntimeSignalRef<'a> {
 }
 
 impl SignalDesc {
+    pub(crate) fn is_float32(&self) -> bool {
+        (self.flags & SIGNAL_FLAG_FLOAT32) != 0
+    }
+
+    pub(crate) fn is_float64(&self) -> bool {
+        (self.flags & SIGNAL_FLAG_FLOAT64) != 0
+    }
+
     pub(crate) fn is_signed(&self) -> bool {
         (self.flags & SIGNAL_FLAG_SIGNED) != 0
     }
