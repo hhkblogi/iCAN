@@ -96,7 +96,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         return status_to_ffi(SchemaStatus::InvalidArgument);
     }
 
-    let schema = unsafe { &mut *(schema as *mut ican_schema_t) };
+    let schema = unsafe { &*schema };
     if !schema.state.has_schema() {
         schema.state.set_last_error("schema is not loaded");
         return status_to_ffi(SchemaStatus::NotReady);
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn ican_schema_last_error(schema: *const ican_schema_t) ->
     }
 
     let schema = unsafe { &*schema };
-    schema.state.last_error().as_ptr()
+    schema.state.last_error_ptr()
 }
 
 #[unsafe(no_mangle)]

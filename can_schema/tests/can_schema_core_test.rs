@@ -19,6 +19,15 @@ BO_ 291 DemoB : 8 ECM
  SG_ Temp : 0|8@1+ (1,0) [0|255] "C" ECM
 "#;
 
+const NO_MESSAGE_DBC: &str = r#"VERSION "1.0"
+
+NS_ :
+
+BS_:
+
+BU_: ECM
+"#;
+
 fn load_fixture_dbc() -> String {
     let test_srcdir = std::env::var("TEST_SRCDIR").unwrap_or_default();
     let test_workspace = std::env::var("TEST_WORKSPACE").unwrap_or_default();
@@ -48,6 +57,12 @@ fn load_fixture() -> SchemaState {
 #[test]
 fn rejects_empty_dbc_text() {
     let result = SchemaState::load_dbc_text(b"");
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_dbc_without_any_messages() {
+    let result = SchemaState::load_dbc_text(NO_MESSAGE_DBC.as_bytes());
     assert!(result.is_err());
 }
 

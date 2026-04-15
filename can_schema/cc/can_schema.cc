@@ -37,6 +37,8 @@ CANSchema& CANSchema::operator=(CANSchema&& other) noexcept {
 }
 
 bool CANSchema::loadDBCText(const uint8_t* text, size_t length) {
+    clearHandle();
+
     if (text == nullptr || length == 0) {
         setFallbackError(kCreateFailure);
         return false;
@@ -48,7 +50,6 @@ bool CANSchema::loadDBCText(const uint8_t* text, size_t length) {
         return false;
     }
 
-    clearHandle();
     handle_ = next;
     fallback_error_[0] = '\0';
     return true;
