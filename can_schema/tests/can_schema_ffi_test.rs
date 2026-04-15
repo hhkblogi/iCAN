@@ -125,3 +125,41 @@ fn ffi_rejects_remote_and_error_frames_before_lookup() {
 
     unsafe { ffi::ican_schema_destroy(schema) };
 }
+
+#[test]
+fn ffi_rejects_truncated_zero_signal_message() {
+    let schema = unsafe { load_schema() };
+
+    let frame = ffi::canfd_frame {
+        can_id: 700,
+        len: 0,
+        flags: 0,
+        __res0: 0,
+        __res1: 0,
+        data: [0; 64],
+    };
+
+    let mut message: ffi::ican_schema_decoded_message_t = unsafe { std::mem::zeroed() };
+    let mut signal_count = 99usize;
+
+    let status = unsafe {
+        ffi::ican_schema_decode_frame_into(
+            schema,
+            &frame,
+            &mut message,
+            ptr::null_mut(),
+            0,
+            &mut signal_count,
+        )
+    };
+
+    assert_eq!(status, can_schema::SchemaStatus::InvalidArgument as i32);
+    assert!(!message.matched);
+    assert_eq!(signal_count, 0);
+    assert_eq!(
+        unsafe { last_error(schema) },
+        "frame payload shorter than DBC message DLC"
+    );
+
+    unsafe { ffi::ican_schema_destroy(schema) };
+}

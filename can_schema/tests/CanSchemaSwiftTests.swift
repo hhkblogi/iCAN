@@ -201,6 +201,28 @@ final class CANSchemaSwiftTests: XCTestCase {
         }
     }
 
+    func testDecodeRejectsTruncatedZeroSignalMessage() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 700
+        frame.len = 0
+
+        var message = CANSchemaDecodedMessage()
+        var signalCount = 99
+
+        let status = withUnsafeMutablePointer(to: &message) { messagePtr in
+            withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                schema.decode(frame, messagePtr, nil, 0, countPtr)
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_INVALID_ARGUMENT.rawValue))
+        XCTAssertFalse(message.matched)
+        XCTAssertEqual(signalCount, 0)
+    }
+
     func testDecodeReportsMissingSchema() {
         let schema = CANSchema()
         var frame = canfd_frame()

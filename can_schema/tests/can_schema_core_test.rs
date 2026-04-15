@@ -84,7 +84,7 @@ fn parses_fixture_file_into_ir() {
     let dbc = load_fixture_dbc();
     let schema_ir = SchemaIr::parse_dbc(&dbc).expect("fixture DBC should parse");
 
-    assert_eq!(schema_ir.messages.len(), 4);
+    assert_eq!(schema_ir.messages.len(), 5);
     assert_eq!(schema_ir.messages[0].name, "Demo");
     assert_eq!(schema_ir.messages[0].signals.len(), 2);
     assert_eq!(schema_ir.messages[0].signals[0].byte_order, ByteOrder::LittleEndian);
@@ -93,6 +93,8 @@ fn parses_fixture_file_into_ir() {
     assert!(schema_ir.messages[2].is_extended);
     assert_eq!(schema_ir.messages[2].signals[0].choices.len(), 2);
     assert_eq!(schema_ir.messages[3].name, "MultiStatus");
+    assert_eq!(schema_ir.messages[4].name, "Empty");
+    assert_eq!(schema_ir.messages[4].signals.len(), 0);
 }
 
 #[test]
@@ -100,7 +102,7 @@ fn loads_fixture_and_reports_max_signals() {
     let schema = load_fixture();
     assert!(schema.has_schema());
     assert_eq!(schema.max_signals(), 3);
-    assert_eq!(schema.schema_ir().messages.len(), 4);
+    assert_eq!(schema.schema_ir().messages.len(), 5);
 }
 
 #[test]
@@ -213,5 +215,7 @@ fn decodes_choice_label_and_multiplexed_signals_from_file() {
     assert_eq!(multi.is_signal_active(0, &thermal_payload), Some(true));
     assert_eq!(multi.is_signal_active(1, &thermal_payload), Some(false));
     assert_eq!(multi.is_signal_active(2, &thermal_payload), Some(true));
+    assert!(multi.decode_signal_value(1, &thermal_payload).is_none());
+    assert!(multi.decode_signal(1, &thermal_payload).is_none());
     assert_eq!(multi.decode_signal(2, &thermal_payload), Some(93.0));
 }
