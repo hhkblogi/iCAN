@@ -13,10 +13,10 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
-# App icon (Icon Composer format)
+# App icon (standard asset catalog app icon set)
 filegroup(
     name = "AppIcon",
-    srcs = glob(["AppIcon.icon/**"]),
+    srcs = glob(["AppIcon.appiconset/**"]),
     visibility = ["//visibility:public"],
 )
 
