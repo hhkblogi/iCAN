@@ -90,6 +90,10 @@ int32_t CANSchema::decode(
     outMessage->messageNameLength = message.message_name_len;
     outMessage->signalCount = message.signal_count;
 
+    if (status != ICAN_SCHEMA_STATUS_OK || outSignals == nullptr) {
+        return static_cast<int32_t>(status);
+    }
+
     for (size_t i = 0; i < *outSignalCount; ++i) {
         auto* raw = reinterpret_cast<ican_schema_decoded_signal_t*>(&outSignals[i]);
         outSignals[i].name = raw->name_ptr;
