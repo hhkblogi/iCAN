@@ -1,0 +1,79 @@
+use crate::ir::ByteOrder;
+use crate::runtime::{RuntimeMessageRef, RuntimeSignalRef};
+
+impl<'a> RuntimeMessageRef<'a> {
+    pub fn decode_signal(&self, index: usize, payload: &[u8]) -> Option<f64> {
+        self.signal(index)?.decode(payload)
+    }
+}
+
+impl<'a> RuntimeSignalRef<'a> {
+    fn decode(&self, payload: &[u8]) -> Option<f64> {
+        let desc = self.desc();
+        let raw = match desc.byte_order() {
+            ByteOrder::LittleEndian => {
+                extract_little_endian(payload, usize::from(desc.start_bit), usize::from(desc.bit_len))?
+            }
+            ByteOrder::BigEndian => {
+                extract_big_endian(payload, usize::from(desc.start_bit), usize::from(desc.bit_len))?
+            }
+        };
+
+        let numeric = if desc.is_signed() {
+            let signed = sign_extend(raw, usize::from(desc.bit_len))?;
+            signed as f64
+        } else {
+            raw as f64
+        };
+
+        Some(numeric * desc.factor + desc.offset)
+    }
+}
+
+fn extract_little_endian(payload: &[u8], start_bit: usize, bit_len: usize) -> Option<u64> {
+    let mut raw = 0u64;
+    for offset in 0..bit_len {
+        let bit_index = start_bit + offset;
+        let byte = *payload.get(bit_index / 8)?;
+        let bit = (byte >> (bit_index % 8)) & 1;
+        raw |= u64::from(bit) << offset;
+    }
+    Some(raw)
+}
+
+fn extract_big_endian(payload: &[u8], start_bit: usize, bit_len: usize) -> Option<u64> {
+    let mut raw = 0u64;
+    let mut bit_index = start_bit;
+
+    for consumed in 0..bit_len {
+        let byte = *payload.get(bit_index / 8)?;
+        let bit = (byte >> (bit_index % 8)) & 1;
+        raw = (raw << 1) | u64::from(bit);
+
+        if consumed + 1 < bit_len {
+            bit_index = next_big_endian_bit(bit_index)?;
+        }
+    }
+
+    Some(raw)
+}
+
+fn next_big_endian_bit(bit_index: usize) -> Option<usize> {
+    if bit_index % 8 == 0 {
+        bit_index.checked_add(15)
+    } else {
+        bit_index.checked_sub(1)
+    }
+}
+
+fn sign_extend(raw: u64, bit_len: usize) -> Option<i64> {
+    if bit_len == 0 || bit_len > 64 {
+        return None;
+    }
+    if bit_len == 64 {
+        return Some(raw as i64);
+    }
+
+    let shift = 64 - bit_len;
+    Some(((raw << shift) as i64) >> shift)
+}

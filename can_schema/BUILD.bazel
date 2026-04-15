@@ -4,11 +4,16 @@ load("@rules_swift//swift:swift.bzl", "swift_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "Cargo.toml",
     "include/can_schema_ffi.h",
     "cc/can_schema.h",
     "cc/can_schema.cc",
+    "src/compile.rs",
+    "src/decode.rs",
+    "src/ir.rs",
     "src/lib.rs",
+    "src/parser.rs",
+    "src/runtime.rs",
+    "src/status.rs",
     "src/ffi.rs",
     "testdata/demo.dbc",
     "tests/can_schema_core_test.rs",
@@ -19,7 +24,15 @@ exports_files([
 
 rust_library(
     name = "can_schema_core",
-    srcs = ["src/lib.rs"],
+    srcs = [
+        "src/compile.rs",
+        "src/decode.rs",
+        "src/ir.rs",
+        "src/lib.rs",
+        "src/parser.rs",
+        "src/runtime.rs",
+        "src/status.rs",
+    ],
     crate_name = "can_schema",
     edition = "2021",
 )

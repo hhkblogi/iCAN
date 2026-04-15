@@ -16,6 +16,21 @@ BO_ 100 Muxed : 8 ECM
  SG_ Speed m0 : 0|8@1+ (1,0) [0|255] "" ECM
 "#;
 
+const DUPLICATE_MESSAGE_DBC: &str = r#"VERSION "1.0"
+
+NS_ :
+
+BS_:
+
+BU_: ECM
+
+BO_ 291 DemoA : 8 ECM
+ SG_ Speed : 0|16@1+ (1,0) [0|65535] "km/h" ECM
+
+BO_ 291 DemoB : 8 ECM
+ SG_ Temp : 0|8@1+ (1,0) [0|255] "C" ECM
+"#;
+
 fn load_fixture_dbc() -> String {
     let test_srcdir = std::env::var("TEST_SRCDIR").unwrap_or_default();
     let test_workspace = std::env::var("TEST_WORKSPACE").unwrap_or_default();
@@ -55,6 +70,12 @@ fn rejects_unsupported_multiplexed_signal_definitions() {
 }
 
 #[test]
+fn rejects_duplicate_message_ids_during_runtime_compile() {
+    let result = SchemaState::load_dbc_text(DUPLICATE_MESSAGE_DBC.as_bytes());
+    assert!(result.is_err());
+}
+
+#[test]
 fn parses_fixture_file_into_ir() {
     let dbc = load_fixture_dbc();
     let schema_ir = SchemaIr::parse_dbc(&dbc).expect("fixture DBC should parse");
@@ -74,6 +95,30 @@ fn loads_fixture_and_reports_max_signals() {
     assert!(schema.has_schema());
     assert_eq!(schema.max_signals(), 2);
     assert_eq!(schema.schema_ir().messages.len(), 3);
+}
+
+#[test]
+fn runtime_schema_supports_lookup_and_borrowed_metadata() {
+    let schema = load_fixture();
+    let runtime = schema.runtime_schema();
+
+    let demo = runtime.find_message(291, false).expect("Demo message should be present");
+    assert_eq!(demo.frame_id(), 291);
+    assert!(!demo.is_extended());
+    assert_eq!(demo.name(), "Demo");
+    let speed = demo.signal(0).expect("Speed signal should be present");
+    assert_eq!(speed.name(), "Speed");
+    assert_eq!(speed.unit(), Some("km/h"));
+
+    let ext = runtime
+        .find_message(419385573, true)
+        .expect("ExtStatus message should be present");
+    assert_eq!(ext.frame_id(), 419385573);
+    assert!(ext.is_extended());
+    assert_eq!(ext.name(), "ExtStatus");
+    let mode = ext.signal(0).expect("Mode signal should be present");
+    assert_eq!(mode.name(), "Mode");
+    assert_eq!(mode.unit(), None);
 }
 
 #[test]

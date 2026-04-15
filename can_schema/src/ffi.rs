@@ -125,7 +125,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         }
     };
 
-    let signal_count = message.signals().len();
+    let signal_count = message.signal_count();
     unsafe {
         (*out_message).matched = true;
         (*out_message).message_name_ptr = message.name().as_ptr().cast();
@@ -158,7 +158,9 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
     }
 
     for index in 0..signal_count {
-        let signal = &message.signals()[index];
+        let signal = message
+            .signal(index)
+            .expect("runtime message signal range should stay valid");
         let value = match message.decode_signal(index, payload) {
             Some(value) => value,
             None => {

@@ -1,8 +1,0 @@
-[package]
-name = "can_schema"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-name = "can_schema"
-path = "src/lib.rs"
