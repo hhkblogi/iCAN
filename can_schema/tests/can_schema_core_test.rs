@@ -2,19 +2,7 @@ extern crate can_schema;
 
 use std::fs;
 
-use can_schema::{ByteOrder, SchemaIr, SchemaState};
-
-const UNSUPPORTED_MULTIPLEXED_DBC: &str = r#"VERSION "1.0"
-
-NS_ :
-
-BS_:
-
-BU_: ECM
-
-BO_ 100 Muxed : 8 ECM
- SG_ Speed m0 : 0|8@1+ (1,0) [0|255] "" ECM
-"#;
+use can_schema::{ByteOrder, MuxRoleIr, SchemaIr, SchemaState};
 
 const DUPLICATE_MESSAGE_DBC: &str = r#"VERSION "1.0"
 
@@ -64,9 +52,25 @@ fn rejects_empty_dbc_text() {
 }
 
 #[test]
-fn rejects_unsupported_multiplexed_signal_definitions() {
-    let result = SchemaState::load_dbc_text(UNSUPPORTED_MULTIPLEXED_DBC.as_bytes());
-    assert!(result.is_err());
+fn supports_basic_multiplexed_signal_definitions() {
+    let schema = load_fixture();
+    let muxed = schema
+        .schema_ir()
+        .messages
+        .iter()
+        .find(|message| message.name == "MultiStatus")
+        .expect("MultiStatus should be present");
+
+    assert_eq!(muxed.signals.len(), 3);
+    assert_eq!(muxed.signals[0].mux_role, MuxRoleIr::Multiplexor);
+    assert_eq!(
+        muxed.signals[1].mux_role,
+        MuxRoleIr::Multiplexed { selector_value: 0 }
+    );
+    assert_eq!(
+        muxed.signals[2].mux_role,
+        MuxRoleIr::Multiplexed { selector_value: 1 }
+    );
 }
 
 #[test]
@@ -80,21 +84,23 @@ fn parses_fixture_file_into_ir() {
     let dbc = load_fixture_dbc();
     let schema_ir = SchemaIr::parse_dbc(&dbc).expect("fixture DBC should parse");
 
-    assert_eq!(schema_ir.messages.len(), 3);
+    assert_eq!(schema_ir.messages.len(), 4);
     assert_eq!(schema_ir.messages[0].name, "Demo");
     assert_eq!(schema_ir.messages[0].signals.len(), 2);
     assert_eq!(schema_ir.messages[0].signals[0].byte_order, ByteOrder::LittleEndian);
     assert_eq!(schema_ir.messages[1].name, "Battery");
     assert_eq!(schema_ir.messages[2].name, "ExtStatus");
     assert!(schema_ir.messages[2].is_extended);
+    assert_eq!(schema_ir.messages[2].signals[0].choices.len(), 2);
+    assert_eq!(schema_ir.messages[3].name, "MultiStatus");
 }
 
 #[test]
 fn loads_fixture_and_reports_max_signals() {
     let schema = load_fixture();
     assert!(schema.has_schema());
-    assert_eq!(schema.max_signals(), 2);
-    assert_eq!(schema.schema_ir().messages.len(), 3);
+    assert_eq!(schema.max_signals(), 3);
+    assert_eq!(schema.schema_ir().messages.len(), 4);
 }
 
 #[test]
@@ -119,6 +125,14 @@ fn runtime_schema_supports_lookup_and_borrowed_metadata() {
     let mode = ext.signal(0).expect("Mode signal should be present");
     assert_eq!(mode.name(), "Mode");
     assert_eq!(mode.unit(), None);
+    assert_eq!(mode.display_label_for_raw(7, Some(7)), Some("Active"));
+
+    let multi = runtime
+        .find_message(600, false)
+        .expect("MultiStatus should be present");
+    let page = multi.signal(0).expect("Page signal should be present");
+    assert!(page.is_multiplexor());
+    assert_eq!(page.display_label_for_raw(1, Some(1)), Some("Thermal"));
 }
 
 #[test]
@@ -127,7 +141,7 @@ fn loads_fixture_file_into_schema_state() {
     let schema = SchemaState::load_dbc_text(dbc.as_bytes()).expect("fixture DBC should load");
 
     assert!(schema.has_schema());
-    assert_eq!(schema.max_signals(), 2);
+    assert_eq!(schema.max_signals(), 3);
 }
 
 #[test]
@@ -166,4 +180,38 @@ fn decodes_extended_message_signal_from_file() {
 
     let mode = message.decode_signal(0, &payload).expect("Mode should decode");
     assert_eq!(mode, 7.0);
+}
+
+#[test]
+fn decodes_choice_label_and_multiplexed_signals_from_file() {
+    let schema = load_fixture();
+
+    let ext = schema
+        .find_message(419385573, true)
+        .expect("ExtStatus should be present");
+    let ext_payload = [7, 0, 0, 0, 0, 0, 0, 0];
+    let mode = ext.signal(0).expect("Mode signal should be present");
+    let decoded_mode = ext
+        .decode_signal_value(0, &ext_payload)
+        .expect("Mode should decode");
+    assert_eq!(decoded_mode.engineering_value, 7.0);
+    assert_eq!(
+        mode.display_label_for_raw(decoded_mode.raw_unsigned, decoded_mode.raw_signed),
+        Some("Active")
+    );
+
+    let multi = schema
+        .find_message(600, false)
+        .expect("MultiStatus should be present");
+    let drive_payload = [0, 88, 0, 0, 0, 0, 0, 0];
+    assert_eq!(multi.is_signal_active(0, &drive_payload), Some(true));
+    assert_eq!(multi.is_signal_active(1, &drive_payload), Some(true));
+    assert_eq!(multi.is_signal_active(2, &drive_payload), Some(false));
+    assert_eq!(multi.decode_signal(1, &drive_payload), Some(88.0));
+
+    let thermal_payload = [1, 93, 0, 0, 0, 0, 0, 0];
+    assert_eq!(multi.is_signal_active(0, &thermal_payload), Some(true));
+    assert_eq!(multi.is_signal_active(1, &thermal_payload), Some(false));
+    assert_eq!(multi.is_signal_active(2, &thermal_payload), Some(true));
+    assert_eq!(multi.decode_signal(2, &thermal_payload), Some(93.0));
 }

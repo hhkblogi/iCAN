@@ -13,18 +13,6 @@ namespace {
 
 using rules_cc::cc::runfiles::Runfiles;
 
-constexpr const char* kUnsupportedMultiplexedDBC = R"(VERSION "1.0"
-
-NS_ :
-
-BS_:
-
-BU_: ECM
-
-BO_ 100 Muxed : 8 ECM
- SG_ Speed m0 : 0|8@1+ (1,0) [0|255] "" ECM
-)";
-
 canfd_frame makeFrame() {
     canfd_frame frame = {};
     frame.can_id = 0x123;
@@ -79,14 +67,6 @@ TEST(CANSchemaTest, LoadsFixtureDBCTextFromFile) {
     EXPECT_TRUE(schema.hasSchema());
 }
 
-TEST(CANSchemaTest, RejectsUnsupportedMultiplexedSignalText) {
-    CANSchema schema;
-
-    EXPECT_FALSE(schema.loadDBCText(kUnsupportedMultiplexedDBC));
-    EXPECT_FALSE(schema.hasSchema());
-    EXPECT_STREQ(schema.lastError(), "failed to create can_schema handle");
-}
-
 TEST(CANSchemaTest, DecodeReturnsSignalValuesForLoadedSchema) {
     CANSchema schema;
     const std::string dbc = loadFixtureDBC();
@@ -116,6 +96,28 @@ TEST(CANSchemaTest, DecodeReturnsSignalValuesForLoadedSchema) {
     EXPECT_EQ(viewOf(signals[1].unit, signals[1].unitLength), "C");
     EXPECT_DOUBLE_EQ(signals[1].value, 10.0);
     EXPECT_STREQ(schema.lastError(), "");
+}
+
+TEST(CANSchemaTest, DecodeReturnsChoiceDisplayLabel) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 0x80000000u | 419385573u;
+    frame.data[0] = 7;
+
+    CANSchemaDecodedMessage message;
+    CANSchemaDecodedSignal signals[4] = {};
+    size_t signalCount = 0;
+
+    const int32_t status = schema.decode(frame, &message, signals, 4, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_OK);
+    ASSERT_EQ(signalCount, 1u);
+    EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Mode");
+    EXPECT_EQ(viewOf(signals[0].displayValue, signals[0].displayValueLength), "Active");
 }
 
 TEST(CANSchemaTest, MoveConstructionPreservesLoadedSchema) {
@@ -209,8 +211,8 @@ TEST(CANSchemaTest, DecodeRejectsShortPayloadForFixtureMessage) {
     const int32_t status = schema.decode(frame, &message, signals, 4, &signalCount);
 
     EXPECT_EQ(status, ICAN_SCHEMA_STATUS_INVALID_ARGUMENT);
-    EXPECT_TRUE(message.matched);
-    EXPECT_EQ(signalCount, 2u);
+    EXPECT_FALSE(message.matched);
+    EXPECT_EQ(signalCount, 0u);
     EXPECT_STREQ(schema.lastError(), "frame payload shorter than DBC message DLC");
 }
 
@@ -265,6 +267,58 @@ TEST(CANSchemaTest, DecodeExtendedMessageFromFixtureFile) {
     ASSERT_EQ(signalCount, 1u);
     EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Mode");
     EXPECT_DOUBLE_EQ(signals[0].value, 7.0);
+}
+
+TEST(CANSchemaTest, DecodeReturnsOnlyActiveMultiplexedSignals) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 600;
+    frame.data[0] = 0;
+    frame.data[1] = 88;
+
+    CANSchemaDecodedMessage message;
+    CANSchemaDecodedSignal signals[4] = {};
+    size_t signalCount = 0;
+
+    const int32_t status = schema.decode(frame, &message, signals, 4, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_OK);
+    EXPECT_TRUE(message.matched);
+    EXPECT_EQ(viewOf(message.messageName, message.messageNameLength), "MultiStatus");
+    ASSERT_EQ(signalCount, 2u);
+    EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Page");
+    EXPECT_EQ(viewOf(signals[0].displayValue, signals[0].displayValueLength), "Drive");
+    EXPECT_EQ(viewOf(signals[1].name, signals[1].nameLength), "DriveSpeed");
+    EXPECT_DOUBLE_EQ(signals[1].value, 88.0);
+}
+
+TEST(CANSchemaTest, DecodeSwitchesMultiplexedBranch) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 600;
+    frame.data[0] = 1;
+    frame.data[1] = 93;
+
+    CANSchemaDecodedMessage message;
+    CANSchemaDecodedSignal signals[4] = {};
+    size_t signalCount = 0;
+
+    const int32_t status = schema.decode(frame, &message, signals, 4, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_OK);
+    ASSERT_EQ(signalCount, 2u);
+    EXPECT_EQ(viewOf(signals[0].name, signals[0].nameLength), "Page");
+    EXPECT_EQ(viewOf(signals[0].displayValue, signals[0].displayValueLength), "Thermal");
+    EXPECT_EQ(viewOf(signals[1].name, signals[1].nameLength), "CoolantTemp");
+    EXPECT_DOUBLE_EQ(signals[1].value, 93.0);
 }
 
 TEST(CANSchemaTest, DecodeReportsMissingSchema) {

@@ -16,3 +16,10 @@ BO_ 512 Battery : 8 ECM
 
 BO_ 419385573 ExtStatus : 8 ECM
  SG_ Mode : 0|8@1+ (1,0) [0|255] "" ECM
+VAL_ 419385573 Mode 0 "Idle" 7 "Active";
+
+BO_ 600 MultiStatus : 8 ECM
+ SG_ Page M : 0|8@1+ (1,0) [0|255] "" ECM
+ SG_ DriveSpeed m0 : 8|8@1+ (1,0) [0|255] "km/h" ECM
+ SG_ CoolantTemp m1 : 8|8@1+ (1,0) [0|255] "C" ECM
+VAL_ 600 Page 0 "Drive" 1 "Thermal";

@@ -1,6 +1,8 @@
 pub(crate) const MESSAGE_FLAG_EXTENDED: u16 = 1 << 0;
 pub(crate) const SIGNAL_FLAG_LITTLE_ENDIAN: u16 = 1 << 0;
 pub(crate) const SIGNAL_FLAG_SIGNED: u16 = 1 << 1;
+pub(crate) const SIGNAL_FLAG_MULTIPLEXOR: u16 = 1 << 2;
+pub(crate) const SIGNAL_FLAG_MULTIPLEXED: u16 = 1 << 3;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StringRef {
@@ -15,6 +17,7 @@ pub struct MessageDesc {
     pub(crate) dlc: u8,
     pub(crate) signal_start: u32,
     pub(crate) signal_count: u16,
+    pub(crate) multiplexor_rel_index: u16,
     pub(crate) name: StringRef,
 }
 
@@ -27,6 +30,15 @@ pub struct SignalDesc {
     pub(crate) offset: f64,
     pub(crate) name: StringRef,
     pub(crate) unit: StringRef,
+    pub(crate) choices_start: u32,
+    pub(crate) choices_count: u16,
+    pub(crate) mux_selector_value: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChoiceDesc {
+    pub(crate) raw_value: i64,
+    pub(crate) label: StringRef,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,6 +53,7 @@ pub struct RuntimeSchema {
     pub(crate) strings: Box<[u8]>,
     pub(crate) messages: Box<[MessageDesc]>,
     pub(crate) signals: Box<[SignalDesc]>,
+    pub(crate) choices: Box<[ChoiceDesc]>,
     pub(crate) message_lookup: Box<[MessageLookupEntry]>,
     pub(crate) max_signals_per_message: u16,
 }
@@ -113,6 +126,14 @@ impl<'a> RuntimeMessageRef<'a> {
         usize::from(self.desc().signal_count)
     }
 
+    pub fn multiplexor(&self) -> Option<RuntimeSignalRef<'a>> {
+        let rel = self.desc().multiplexor_rel_index;
+        if rel == u16::MAX {
+            return None;
+        }
+        self.signal(usize::from(rel))
+    }
+
     pub fn signal(&self, index: usize) -> Option<RuntimeSignalRef<'a>> {
         if index >= self.signal_count() {
             return None;
@@ -140,6 +161,41 @@ impl<'a> RuntimeSignalRef<'a> {
             None
         } else {
             Some(unit)
+        }
+    }
+
+    pub fn is_multiplexor(&self) -> bool {
+        (self.desc().flags & SIGNAL_FLAG_MULTIPLEXOR) != 0
+    }
+
+    pub fn is_multiplexed(&self) -> bool {
+        (self.desc().flags & SIGNAL_FLAG_MULTIPLEXED) != 0
+    }
+
+    pub fn multiplex_selector_value(&self) -> Option<u64> {
+        if self.is_multiplexed() {
+            Some(self.desc().mux_selector_value)
+        } else {
+            None
+        }
+    }
+
+    pub fn display_label_for_raw(&self, raw_unsigned: u64, raw_signed: Option<i64>) -> Option<&'a str> {
+        let start = self.desc().choices_start as usize;
+        let end = start + usize::from(self.desc().choices_count);
+        for choice in &self.schema.choices[start..end] {
+            if self.matches_choice(choice.raw_value, raw_unsigned, raw_signed) {
+                return Some(self.schema.string(choice.label));
+            }
+        }
+        None
+    }
+
+    fn matches_choice(&self, choice_value: i64, raw_unsigned: u64, raw_signed: Option<i64>) -> bool {
+        if self.desc().is_signed() {
+            raw_signed == Some(choice_value)
+        } else {
+            choice_value >= 0 && raw_unsigned == choice_value as u64
         }
     }
 }

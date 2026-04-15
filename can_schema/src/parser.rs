@@ -1,4 +1,4 @@
-use crate::ir::{ByteOrder, MessageIr, SchemaIr, SignalIr};
+use crate::ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr};
 
 const CAN_EFF_FLAG: u32 = 0x8000_0000;
 const CAN_SFF_MASK: u32 = 0x0000_07ff;
@@ -33,6 +33,12 @@ impl SchemaIr {
                 let signal = parse_signal_line(line)
                     .map_err(|err| format!("line {}: {}", line_no + 1, err))?;
                 messages[message_index].signals.push(signal);
+                continue;
+            }
+
+            if line.starts_with("VAL_ ") {
+                parse_value_choices_line(&mut messages, line)
+                    .map_err(|err| format!("line {}: {}", line_no + 1, err))?;
                 continue;
             }
         }
@@ -88,11 +94,9 @@ fn parse_signal_line(line: &str) -> Result<SignalIr, String> {
     if left_tokens.is_empty() {
         return Err("signal line must contain a signal name".to_owned());
     }
-    if left_tokens.len() > 1 {
-        return Err("multiplexed signals are not supported yet".to_owned());
-    }
 
     let signal_name = left_tokens[0].to_owned();
+    let mux_role = parse_mux_role(&left_tokens[1..])?;
     let right = right.trim();
     let right_tokens = right.split_whitespace().collect::<Vec<_>>();
     if right_tokens.len() < 2 {
@@ -112,7 +116,100 @@ fn parse_signal_line(line: &str) -> Result<SignalIr, String> {
         factor,
         offset,
         unit,
+        choices: Vec::new(),
+        mux_role,
     })
+}
+
+fn parse_mux_role(tokens: &[&str]) -> Result<MuxRoleIr, String> {
+    match tokens {
+        [] => Ok(MuxRoleIr::None),
+        ["M"] => Ok(MuxRoleIr::Multiplexor),
+        [selector] if selector.starts_with('m') => {
+            let selector_value = selector[1..]
+                .parse::<u64>()
+                .map_err(|_| "multiplex selector value must be an unsigned integer".to_owned())?;
+            Ok(MuxRoleIr::Multiplexed { selector_value })
+        }
+        _ => Err("unsupported multiplexed signal syntax".to_owned()),
+    }
+}
+
+fn parse_value_choices_line(messages: &mut [MessageIr], line: &str) -> Result<(), String> {
+    let rest = line
+        .strip_prefix("VAL_ ")
+        .ok_or_else(|| "value choice line must start with VAL_".to_owned())?;
+    let rest = rest
+        .strip_suffix(';')
+        .ok_or_else(|| "value choice line must end with ';'".to_owned())?;
+
+    let mut cursor = 0usize;
+    let raw_id = next_token(rest, &mut cursor)
+        .ok_or_else(|| "value choice line must contain a message id".to_owned())?;
+    let signal_name = next_token(rest, &mut cursor)
+        .ok_or_else(|| "value choice line must contain a signal name".to_owned())?;
+    let raw_id = raw_id
+        .parse::<u32>()
+        .map_err(|_| "value choice message id must be an unsigned integer".to_owned())?;
+    let (frame_id, is_extended) = classify_frame_id(raw_id)?;
+
+    let message = messages
+        .iter_mut()
+        .find(|message| message.frame_id == frame_id && message.is_extended == is_extended)
+        .ok_or_else(|| format!("value choice line references unknown message id {}", frame_id))?;
+    let signal = message
+        .signals
+        .iter_mut()
+        .find(|signal| signal.name == signal_name)
+        .ok_or_else(|| format!("value choice line references unknown signal {}", signal_name))?;
+
+    while let Some(value_text) = next_token(rest, &mut cursor) {
+        let raw_value = value_text
+            .parse::<i64>()
+            .map_err(|_| "choice raw value must be numeric".to_owned())?;
+        let label = next_quoted(rest, &mut cursor)
+            .ok_or_else(|| "choice label must be quoted".to_owned())?;
+        signal.choices.push(ChoiceIr { raw_value, label });
+    }
+
+    Ok(())
+}
+
+fn next_token<'a>(text: &'a str, cursor: &mut usize) -> Option<&'a str> {
+    let bytes = text.as_bytes();
+    while *cursor < bytes.len() && bytes[*cursor].is_ascii_whitespace() {
+        *cursor += 1;
+    }
+    if *cursor >= bytes.len() {
+        return None;
+    }
+
+    let start = *cursor;
+    while *cursor < bytes.len() && !bytes[*cursor].is_ascii_whitespace() {
+        *cursor += 1;
+    }
+    Some(&text[start..*cursor])
+}
+
+fn next_quoted(text: &str, cursor: &mut usize) -> Option<String> {
+    let bytes = text.as_bytes();
+    while *cursor < bytes.len() && bytes[*cursor].is_ascii_whitespace() {
+        *cursor += 1;
+    }
+    if *cursor >= bytes.len() || bytes[*cursor] != b'"' {
+        return None;
+    }
+    *cursor += 1;
+    let start = *cursor;
+    while *cursor < bytes.len() && bytes[*cursor] != b'"' {
+        *cursor += 1;
+    }
+    if *cursor >= bytes.len() {
+        return None;
+    }
+    let label = text[start..*cursor].to_owned();
+    *cursor += 1;
+    Some(label)
 }
 
 fn classify_frame_id(raw_id: u32) -> Result<(u32, bool), String> {

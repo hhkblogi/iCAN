@@ -7,7 +7,8 @@ mod parser;
 mod runtime;
 mod status;
 
-pub use ir::{ByteOrder, MessageIr, SchemaIr, SignalIr};
+pub use decode::DecodedSignalValue;
+pub use ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr};
 pub use runtime::{RuntimeMessageRef, RuntimeSchema, RuntimeSignalRef, StringRef};
 pub use status::SchemaStatus;
 
