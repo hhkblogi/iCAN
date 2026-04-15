@@ -80,6 +80,41 @@ final class CANSchemaSwiftTests: XCTestCase {
         XCTAssertEqual(stringView(message.messageName, message.messageNameLength), "ExtStatus")
         XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Mode")
         XCTAssertEqual(signals[0].value, 7.0)
+        XCTAssertEqual(stringView(signals[0].displayValue, signals[0].displayValueLength), "Active")
+    }
+
+    func testDecodeMultiplexedMessageFromFixtureFile() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 600
+        frame.len = 8
+        withUnsafeMutableBytes(of: &frame.data) { buffer in
+            buffer[0] = 0
+            buffer[1] = 88
+        }
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 4)
+        var signalCount = 0
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_OK.rawValue))
+        XCTAssertTrue(message.matched)
+        XCTAssertEqual(signalCount, 2)
+        XCTAssertEqual(stringView(message.messageName, message.messageNameLength), "MultiStatus")
+        XCTAssertEqual(stringView(signals[0].name, signals[0].nameLength), "Page")
+        XCTAssertEqual(stringView(signals[0].displayValue, signals[0].displayValueLength), "Drive")
+        XCTAssertEqual(stringView(signals[1].name, signals[1].nameLength), "DriveSpeed")
+        XCTAssertEqual(signals[1].value, 88.0)
     }
 
     func testDecodeReportsNoMatchForUnknownFrame() throws {

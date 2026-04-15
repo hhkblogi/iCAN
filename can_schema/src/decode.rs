@@ -1,14 +1,36 @@
 use crate::ir::ByteOrder;
 use crate::runtime::{RuntimeMessageRef, RuntimeSignalRef};
 
+#[derive(Clone, Copy, Debug)]
+pub struct DecodedSignalValue {
+    pub raw_unsigned: u64,
+    pub raw_signed: Option<i64>,
+    pub engineering_value: f64,
+}
+
 impl<'a> RuntimeMessageRef<'a> {
     pub fn decode_signal(&self, index: usize, payload: &[u8]) -> Option<f64> {
+        Some(self.decode_signal_value(index, payload)?.engineering_value)
+    }
+
+    pub fn decode_signal_value(&self, index: usize, payload: &[u8]) -> Option<DecodedSignalValue> {
         self.signal(index)?.decode(payload)
+    }
+
+    pub fn is_signal_active(&self, index: usize, payload: &[u8]) -> Option<bool> {
+        let signal = self.signal(index)?;
+        if signal.is_multiplexor() || !signal.is_multiplexed() {
+            return Some(true);
+        }
+
+        let multiplexor = self.multiplexor()?;
+        let selector = multiplexor.decode(payload)?;
+        Some(selector.raw_unsigned == signal.multiplex_selector_value()?)
     }
 }
 
 impl<'a> RuntimeSignalRef<'a> {
-    fn decode(&self, payload: &[u8]) -> Option<f64> {
+    fn decode(&self, payload: &[u8]) -> Option<DecodedSignalValue> {
         let desc = self.desc();
         let raw = match desc.byte_order() {
             ByteOrder::LittleEndian => {
@@ -19,14 +41,22 @@ impl<'a> RuntimeSignalRef<'a> {
             }
         };
 
-        let numeric = if desc.is_signed() {
-            let signed = sign_extend(raw, usize::from(desc.bit_len))?;
+        let raw_signed = if desc.is_signed() {
+            Some(sign_extend(raw, usize::from(desc.bit_len))?)
+        } else {
+            None
+        };
+        let numeric = if let Some(signed) = raw_signed {
             signed as f64
         } else {
             raw as f64
         };
 
-        Some(numeric * desc.factor + desc.offset)
+        Some(DecodedSignalValue {
+            raw_unsigned: raw,
+            raw_signed,
+            engineering_value: numeric * desc.factor + desc.offset,
+        })
     }
 }
 

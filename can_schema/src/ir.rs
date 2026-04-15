@@ -5,6 +5,19 @@ pub enum ByteOrder {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ChoiceIr {
+    pub raw_value: i64,
+    pub label: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MuxRoleIr {
+    None,
+    Multiplexor,
+    Multiplexed { selector_value: u64 },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct SignalIr {
     pub name: String,
     pub start_bit: u16,
@@ -14,6 +27,8 @@ pub struct SignalIr {
     pub factor: f64,
     pub offset: f64,
     pub unit: Option<String>,
+    pub choices: Vec<ChoiceIr>,
+    pub mux_role: MuxRoleIr,
 }
 
 #[derive(Clone, Debug, PartialEq)]

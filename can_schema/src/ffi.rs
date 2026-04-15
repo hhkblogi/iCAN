@@ -125,16 +125,36 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         }
     };
 
-    let signal_count = message.signal_count();
+    let payload = unsafe {
+        let data = &(*frame).data;
+        &data[..payload_len]
+    };
+    if message.signal_count() > 0 && payload_len < usize::from(message.dlc()) {
+        schema.state.set_last_error("frame payload shorter than DBC message DLC");
+        return status_to_ffi(SchemaStatus::InvalidArgument);
+    }
+
+    let mut active_signal_count = 0usize;
+    for index in 0..message.signal_count() {
+        match message.is_signal_active(index, payload) {
+            Some(true) => active_signal_count += 1,
+            Some(false) => {}
+            None => {
+                schema.state.set_last_error("failed to resolve multiplexed signal visibility");
+                return status_to_ffi(SchemaStatus::InvalidArgument);
+            }
+        }
+    }
+
     unsafe {
         (*out_message).matched = true;
         (*out_message).message_name_ptr = message.name().as_ptr().cast();
         (*out_message).message_name_len = message.name().len();
-        (*out_message).signal_count = signal_count;
-        *out_signal_count = signal_count;
+        (*out_message).signal_count = active_signal_count;
+        *out_signal_count = active_signal_count;
     }
 
-    if signal_count > 0 && out_signals.is_null() {
+    if active_signal_count > 0 && out_signals.is_null() {
         if _signal_capacity == 0 {
             schema.state.set_last_error("decoded signal buffer is too small");
             return status_to_ffi(SchemaStatus::BufferTooSmall);
@@ -143,46 +163,50 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         return status_to_ffi(SchemaStatus::InvalidArgument);
     }
 
-    if signal_count > _signal_capacity {
+    if active_signal_count > _signal_capacity {
         schema.state.set_last_error("decoded signal buffer is too small");
         return status_to_ffi(SchemaStatus::BufferTooSmall);
     }
 
-    let payload = unsafe {
-        let data = &(*frame).data;
-        &data[..payload_len]
-    };
-    if signal_count > 0 && payload_len < usize::from(message.dlc()) {
-        schema.state.set_last_error("frame payload shorter than DBC message DLC");
-        return status_to_ffi(SchemaStatus::InvalidArgument);
-    }
+    let mut out_index = 0usize;
+    for index in 0..message.signal_count() {
+        if !message
+            .is_signal_active(index, payload)
+            .expect("multiplex visibility should have been validated")
+        {
+            continue;
+        }
 
-    for index in 0..signal_count {
-        let signal = message
-            .signal(index)
-            .expect("runtime message signal range should stay valid");
-        let value = match message.decode_signal(index, payload) {
-            Some(value) => value,
+        let signal = message.signal(index).expect("runtime message signal range should stay valid");
+        let decoded = match message.decode_signal_value(index, payload) {
+            Some(decoded) => decoded,
             None => {
                 schema.state.set_last_error("failed to decode signal from payload");
                 return status_to_ffi(SchemaStatus::InvalidArgument);
             }
         };
+        let display_value = signal.display_label_for_raw(decoded.raw_unsigned, decoded.raw_signed);
 
         unsafe {
-            (*out_signals.add(index)).name_ptr = signal.name().as_ptr().cast();
-            (*out_signals.add(index)).name_len = signal.name().len();
-            (*out_signals.add(index)).value = value;
+            (*out_signals.add(out_index)).name_ptr = signal.name().as_ptr().cast();
+            (*out_signals.add(out_index)).name_len = signal.name().len();
+            (*out_signals.add(out_index)).value = decoded.engineering_value;
             if let Some(unit) = signal.unit() {
-                (*out_signals.add(index)).unit_ptr = unit.as_ptr().cast();
-                (*out_signals.add(index)).unit_len = unit.len();
+                (*out_signals.add(out_index)).unit_ptr = unit.as_ptr().cast();
+                (*out_signals.add(out_index)).unit_len = unit.len();
             } else {
-                (*out_signals.add(index)).unit_ptr = std::ptr::null();
-                (*out_signals.add(index)).unit_len = 0;
+                (*out_signals.add(out_index)).unit_ptr = std::ptr::null();
+                (*out_signals.add(out_index)).unit_len = 0;
             }
-            (*out_signals.add(index)).display_value_ptr = std::ptr::null();
-            (*out_signals.add(index)).display_value_len = 0;
+            if let Some(display_value) = display_value {
+                (*out_signals.add(out_index)).display_value_ptr = display_value.as_ptr().cast();
+                (*out_signals.add(out_index)).display_value_len = display_value.len();
+            } else {
+                (*out_signals.add(out_index)).display_value_ptr = std::ptr::null();
+                (*out_signals.add(out_index)).display_value_len = 0;
+            }
         }
+        out_index += 1;
     }
 
     schema.state.clear_last_error();
