@@ -17,6 +17,7 @@ exports_files([
     "src/ffi.rs",
     "testdata/demo.dbc",
     "tests/can_schema_core_test.rs",
+    "tests/can_schema_ffi_test.rs",
     "tests/can_schema_test.cpp",
     "tests/CanSchemaSwiftTestBridgingHeader.h",
     "tests/CanSchemaSwiftTests.swift",
@@ -41,6 +42,19 @@ rust_test(
     name = "can_schema_core_test",
     srcs = ["tests/can_schema_core_test.rs"],
     crate_name = "can_schema_core_test",
+    edition = "2021",
+    data = ["testdata/demo.dbc"],
+    deps = [":can_schema_core"],
+)
+
+rust_test(
+    name = "can_schema_ffi_test",
+    srcs = [
+        "src/ffi.rs",
+        "tests/can_schema_ffi_test.rs",
+    ],
+    crate_name = "can_schema_ffi_test",
+    crate_root = "tests/can_schema_ffi_test.rs",
     edition = "2021",
     data = ["testdata/demo.dbc"],
     deps = [":can_schema_core"],

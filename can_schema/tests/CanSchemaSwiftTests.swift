@@ -142,6 +142,65 @@ final class CANSchemaSwiftTests: XCTestCase {
         XCTAssertEqual(signalCount, 0)
     }
 
+    func testDecodeAllowsNilSignalBufferProbe() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        var frame = canfd_frame()
+        frame.can_id = 291
+        frame.len = 8
+        withUnsafeMutableBytes(of: &frame.data) { buffer in
+            buffer[0] = 0x34
+            buffer[1] = 0x12
+            buffer[2] = 100
+        }
+
+        var message = CANSchemaDecodedMessage()
+        var signalCount = 99
+
+        let status = withUnsafeMutablePointer(to: &message) { messagePtr in
+            withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                schema.decode(frame, messagePtr, nil, 0, countPtr)
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_BUFFER_TOO_SMALL.rawValue))
+        XCTAssertTrue(message.matched)
+        XCTAssertEqual(signalCount, 2)
+    }
+
+    func testDecodeRejectsRemoteAndErrorFrames() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+
+        for flag in [UInt32(CAN_RTR_FLAG), UInt32(CAN_ERR_FLAG)] {
+            var frame = canfd_frame()
+            frame.can_id = flag | 291
+            frame.len = 8
+            withUnsafeMutableBytes(of: &frame.data) { buffer in
+                buffer[0] = 0x34
+                buffer[1] = 0x12
+                buffer[2] = 100
+            }
+
+            var message = CANSchemaDecodedMessage()
+            var signals = Array(repeating: CANSchemaDecodedSignal(), count: 2)
+            var signalCount = 99
+
+            let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+                withUnsafeMutablePointer(to: &message) { messagePtr in
+                    withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                        schema.decode(frame, messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                    }
+                }
+            }
+
+            XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_INVALID_ARGUMENT.rawValue))
+            XCTAssertFalse(message.matched)
+            XCTAssertEqual(signalCount, 0)
+        }
+    }
+
     func testDecodeReportsMissingSchema() {
         let schema = CANSchema()
         var frame = canfd_frame()

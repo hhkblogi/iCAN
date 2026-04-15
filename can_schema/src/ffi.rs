@@ -3,6 +3,8 @@ use std::ffi::c_char;
 use can_schema::{SchemaState, SchemaStatus};
 
 const CAN_EFF_FLAG: u32 = 0x8000_0000;
+const CAN_RTR_FLAG: u32 = 0x4000_0000;
+const CAN_ERR_FLAG: u32 = 0x2000_0000;
 const CAN_SFF_MASK: u32 = 0x0000_07ff;
 const CAN_EFF_MASK: u32 = 0x1fff_ffff;
 const CANFD_MAX_DLEN: usize = 64;
@@ -14,31 +16,31 @@ pub struct ican_schema_t {
 
 #[repr(C)]
 pub struct ican_schema_decoded_signal_t {
-    name_ptr: *const c_char,
-    name_len: usize,
-    value: f64,
-    unit_ptr: *const c_char,
-    unit_len: usize,
-    display_value_ptr: *const c_char,
-    display_value_len: usize,
+    pub name_ptr: *const c_char,
+    pub name_len: usize,
+    pub value: f64,
+    pub unit_ptr: *const c_char,
+    pub unit_len: usize,
+    pub display_value_ptr: *const c_char,
+    pub display_value_len: usize,
 }
 
 #[repr(C)]
 pub struct ican_schema_decoded_message_t {
-    matched: bool,
-    message_name_ptr: *const c_char,
-    message_name_len: usize,
-    signal_count: usize,
+    pub matched: bool,
+    pub message_name_ptr: *const c_char,
+    pub message_name_len: usize,
+    pub signal_count: usize,
 }
 
 #[repr(C)]
 pub struct canfd_frame {
-    can_id: u32,
-    len: u8,
-    flags: u8,
-    __res0: u8,
-    __res1: u8,
-    data: [u8; 64],
+    pub can_id: u32,
+    pub len: u8,
+    pub flags: u8,
+    pub __res0: u8,
+    pub __res1: u8,
+    pub data: [u8; 64],
 }
 
 fn status_to_ffi(status: SchemaStatus) -> i32 {
@@ -87,7 +89,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
     frame: *const canfd_frame,
     out_message: *mut ican_schema_decoded_message_t,
     out_signals: *mut ican_schema_decoded_signal_t,
-    _signal_capacity: usize,
+    signal_capacity: usize,
     out_signal_count: *mut usize,
 ) -> i32 {
     if schema.is_null() || frame.is_null() || out_message.is_null() || out_signal_count.is_null() {
@@ -110,6 +112,13 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
     }
 
     let raw_id = unsafe { (*frame).can_id };
+    if (raw_id & (CAN_RTR_FLAG | CAN_ERR_FLAG)) != 0 {
+        schema
+            .state
+            .set_last_error("RTR and error CAN frames are not decodable");
+        return status_to_ffi(SchemaStatus::InvalidArgument);
+    }
+
     let is_extended = (raw_id & CAN_EFF_FLAG) != 0;
     let frame_id = if is_extended {
         raw_id & CAN_EFF_MASK
@@ -155,7 +164,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
     }
 
     if active_signal_count > 0 && out_signals.is_null() {
-        if _signal_capacity == 0 {
+        if signal_capacity == 0 {
             schema.state.set_last_error("decoded signal buffer is too small");
             return status_to_ffi(SchemaStatus::BufferTooSmall);
         }
@@ -163,7 +172,7 @@ pub unsafe extern "C" fn ican_schema_decode_frame_into(
         return status_to_ffi(SchemaStatus::InvalidArgument);
     }
 
-    if active_signal_count > _signal_capacity {
+    if active_signal_count > signal_capacity {
         schema.state.set_last_error("decoded signal buffer is too small");
         return status_to_ffi(SchemaStatus::BufferTooSmall);
     }

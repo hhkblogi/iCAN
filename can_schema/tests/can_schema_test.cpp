@@ -192,6 +192,29 @@ TEST(CANSchemaTest, DecodeReportsSmallSignalBuffer) {
     EXPECT_STREQ(schema.lastError(), "decoded signal buffer is too small");
 }
 
+TEST(CANSchemaTest, DecodeAllowsNullSignalBufferProbe) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    canfd_frame frame = makeFrame();
+    frame.can_id = 291;
+    frame.data[0] = 0x34;
+    frame.data[1] = 0x12;
+    frame.data[2] = 100;
+
+    CANSchemaDecodedMessage message;
+    size_t signalCount = 99;
+
+    const int32_t status = schema.decode(frame, &message, nullptr, 0, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_BUFFER_TOO_SMALL);
+    EXPECT_TRUE(message.matched);
+    EXPECT_EQ(signalCount, 2u);
+    EXPECT_STREQ(schema.lastError(), "decoded signal buffer is too small");
+}
+
 TEST(CANSchemaTest, DecodeRejectsShortPayloadForFixtureMessage) {
     CANSchema schema;
     const std::string dbc = loadFixtureDBC();
@@ -319,6 +342,32 @@ TEST(CANSchemaTest, DecodeSwitchesMultiplexedBranch) {
     EXPECT_EQ(viewOf(signals[0].displayValue, signals[0].displayValueLength), "Thermal");
     EXPECT_EQ(viewOf(signals[1].name, signals[1].nameLength), "CoolantTemp");
     EXPECT_DOUBLE_EQ(signals[1].value, 93.0);
+}
+
+TEST(CANSchemaTest, DecodeRejectsRemoteAndErrorFrames) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+
+    for (const uint32_t flag : {CAN_RTR_FLAG, CAN_ERR_FLAG}) {
+        canfd_frame frame = makeFrame();
+        frame.can_id = flag | 291u;
+        frame.data[0] = 0x34;
+        frame.data[1] = 0x12;
+        frame.data[2] = 100;
+
+        CANSchemaDecodedMessage message;
+        CANSchemaDecodedSignal signals[2] = {};
+        size_t signalCount = 99;
+
+        const int32_t status = schema.decode(frame, &message, signals, 2, &signalCount);
+
+        EXPECT_EQ(status, ICAN_SCHEMA_STATUS_INVALID_ARGUMENT);
+        EXPECT_FALSE(message.matched);
+        EXPECT_EQ(signalCount, 0u);
+        EXPECT_STREQ(schema.lastError(), "RTR and error CAN frames are not decodable");
+    }
 }
 
 TEST(CANSchemaTest, DecodeReportsMissingSchema) {
