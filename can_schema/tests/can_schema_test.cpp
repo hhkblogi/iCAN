@@ -67,6 +67,38 @@ TEST(CANSchemaTest, LoadsFixtureDBCTextFromFile) {
     EXPECT_TRUE(schema.hasSchema());
 }
 
+TEST(CANSchemaTest, RejectsDBCWithoutMessages) {
+    CANSchema schema;
+    const char* dbc = "VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n";
+
+    EXPECT_FALSE(schema.loadDBCText(dbc));
+    EXPECT_FALSE(schema.hasSchema());
+    EXPECT_STREQ(schema.lastError(), "failed to create can_schema handle");
+}
+
+TEST(CANSchemaTest, FailedReloadClearsPreviousSchema) {
+    CANSchema schema;
+    const std::string dbc = loadFixtureDBC();
+    ASSERT_FALSE(dbc.empty());
+    ASSERT_TRUE(schema.loadDBCText(dbc.c_str()));
+    ASSERT_TRUE(schema.hasSchema());
+
+    const char* invalid = "VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n";
+    EXPECT_FALSE(schema.loadDBCText(invalid));
+    EXPECT_FALSE(schema.hasSchema());
+
+    CANSchemaDecodedMessage message;
+    CANSchemaDecodedSignal signals[2] = {};
+    size_t signalCount = 99;
+
+    const int32_t status = schema.decode(makeFrame(), &message, signals, 2, &signalCount);
+
+    EXPECT_EQ(status, ICAN_SCHEMA_STATUS_NOT_READY);
+    EXPECT_FALSE(message.matched);
+    EXPECT_EQ(signalCount, 0u);
+    EXPECT_STREQ(schema.lastError(), "schema is not loaded");
+}
+
 TEST(CANSchemaTest, DecodeReturnsSignalValuesForLoadedSchema) {
     CANSchema schema;
     const std::string dbc = loadFixtureDBC();

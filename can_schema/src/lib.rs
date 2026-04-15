@@ -1,4 +1,6 @@
-use std::ffi::CString;
+use std::cell::RefCell;
+use std::ffi::{c_char, CString};
+use std::sync::Mutex;
 
 mod compile;
 mod decode;
@@ -12,10 +14,15 @@ pub use ir::{ByteOrder, ChoiceIr, MessageIr, MuxRoleIr, SchemaIr, SignalIr};
 pub use runtime::{RuntimeMessageRef, RuntimeSchema, RuntimeSignalRef, StringRef};
 pub use status::SchemaStatus;
 
+thread_local! {
+    static LAST_ERROR_SNAPSHOT: RefCell<CString> =
+        RefCell::new(CString::new("").expect("empty CString must be valid"));
+}
+
 pub struct SchemaState {
     schema_ir: SchemaIr,
     runtime: RuntimeSchema,
-    last_error: CString,
+    last_error: Mutex<CString>,
 }
 
 impl SchemaState {
@@ -32,7 +39,7 @@ impl SchemaState {
         Ok(Self {
             schema_ir,
             runtime,
-            last_error: CString::new("").expect("empty CString must be valid"),
+            last_error: Mutex::new(CString::new("").expect("empty CString must be valid")),
         })
     }
 
@@ -48,18 +55,34 @@ impl SchemaState {
         &self.runtime
     }
 
-    pub fn last_error(&self) -> &CString {
-        &self.last_error
+    pub fn last_error_ptr(&self) -> *const c_char {
+        let snapshot = self
+            .last_error
+            .lock()
+            .expect("schema error mutex should not be poisoned")
+            .clone();
+
+        LAST_ERROR_SNAPSHOT.with(|slot| {
+            *slot.borrow_mut() = snapshot;
+            slot.borrow().as_ptr()
+        })
     }
 
-    pub fn set_last_error(&mut self, message: impl AsRef<str>) {
+    pub fn set_last_error(&self, message: impl AsRef<str>) {
         let sanitized = message.as_ref().replace('\0', "?");
-        self.last_error =
+        *self
+            .last_error
+            .lock()
+            .expect("schema error mutex should not be poisoned") =
             CString::new(sanitized).expect("sanitized error strings must not contain NUL");
     }
 
-    pub fn clear_last_error(&mut self) {
-        self.last_error = CString::new("").expect("empty CString must be valid");
+    pub fn clear_last_error(&self) {
+        *self
+            .last_error
+            .lock()
+            .expect("schema error mutex should not be poisoned") =
+            CString::new("").expect("empty CString must be valid");
     }
 
     pub fn find_message(&self, id: u32, is_extended: bool) -> Option<RuntimeMessageRef<'_>> {

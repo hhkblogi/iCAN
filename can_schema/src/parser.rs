@@ -43,6 +43,10 @@ impl SchemaIr {
             }
         }
 
+        if messages.is_empty() {
+            return Err("DBC text must define at least one message".to_owned());
+        }
+
         Ok(Self { messages })
     }
 }

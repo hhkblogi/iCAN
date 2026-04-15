@@ -14,6 +14,48 @@ final class CANSchemaSwiftTests: XCTestCase {
         XCTAssertTrue(schema.hasSchema())
     }
 
+    func testRejectsDBCWithoutMessages() {
+        var schema = CANSchema()
+        let dbc = "VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n"
+
+        let loaded = dbc.withCString { ptr in
+            schema.loadDBCText(ptr)
+        }
+
+        XCTAssertFalse(loaded)
+        XCTAssertFalse(schema.hasSchema())
+    }
+
+    func testFailedReloadClearsPreviousSchema() throws {
+        var schema = CANSchema()
+        try loadSchema(&schema)
+        XCTAssertTrue(schema.hasSchema())
+
+        let invalid = "VERSION \"1.0\"\n\nNS_ :\n\nBS_:\n\nBU_: ECM\n"
+        let loaded = invalid.withCString { ptr in
+            schema.loadDBCText(ptr)
+        }
+
+        XCTAssertFalse(loaded)
+        XCTAssertFalse(schema.hasSchema())
+
+        var message = CANSchemaDecodedMessage()
+        var signals = Array(repeating: CANSchemaDecodedSignal(), count: 2)
+        var signalCount = 99
+
+        let status = signals.withUnsafeMutableBufferPointer { signalBuffer in
+            withUnsafeMutablePointer(to: &message) { messagePtr in
+                withUnsafeMutablePointer(to: &signalCount) { countPtr in
+                    schema.decode(makeFrame(), messagePtr, signalBuffer.baseAddress, signalBuffer.count, countPtr)
+                }
+            }
+        }
+
+        XCTAssertEqual(status, Int32(ICAN_SCHEMA_STATUS_NOT_READY.rawValue))
+        XCTAssertFalse(message.matched)
+        XCTAssertEqual(signalCount, 0)
+    }
+
     func testDecodeStandardMessageFromFixtureFile() throws {
         var schema = CANSchema()
         try loadSchema(&schema)
@@ -285,5 +327,12 @@ final class CANSchemaSwiftTests: XCTestCase {
         guard let ptr else { return "" }
         let buffer = UnsafeBufferPointer(start: UnsafeRawPointer(ptr).assumingMemoryBound(to: UInt8.self), count: len)
         return String(decoding: buffer, as: UTF8.self)
+    }
+
+    private func makeFrame() -> canfd_frame {
+        var frame = canfd_frame()
+        frame.can_id = 0x123
+        frame.len = 8
+        return frame
     }
 }
