@@ -41,7 +41,12 @@ impl RuntimeSchema {
             max_signals_per_message = max_signals_per_message.max(signal_count);
 
             for signal_ir in &message_ir.signals {
-                signals.push(SignalDesc::from_ir(signal_ir, &mut strings, &mut choices)?);
+                signals.push(SignalDesc::from_ir(
+                    signal_ir,
+                    message_ir.dlc,
+                    &mut strings,
+                    &mut choices,
+                )?);
             }
 
             let flags = message_flags(message_ir.is_extended);
@@ -77,6 +82,7 @@ impl RuntimeSchema {
 impl SignalDesc {
     fn from_ir(
         signal: &SignalIr,
+        message_dlc: u8,
         strings: &mut StringTableBuilder,
         choices: &mut Vec<ChoiceDesc>,
     ) -> Result<Self, String> {
@@ -92,6 +98,7 @@ impl SignalDesc {
         }
 
         validate_signal_value_type(signal)?;
+        validate_signal_layout(signal, message_dlc)?;
 
         Ok(Self {
             start_bit: signal.start_bit,
@@ -244,5 +251,48 @@ fn validate_signal_value_type(signal: &SignalIr) -> Result<(), String> {
             }
             Ok(())
         }
+    }
+}
+
+fn validate_signal_layout(signal: &SignalIr, message_dlc: u8) -> Result<(), String> {
+    if signal.bit_len == 0 {
+        return Err(format!("signal {} must use at least one bit", signal.name));
+    }
+
+    let max_bit = match signal.byte_order {
+        ByteOrder::LittleEndian => {
+            usize::from(signal.start_bit) + usize::from(signal.bit_len) - 1
+        }
+        ByteOrder::BigEndian => {
+            let mut bit_index = usize::from(signal.start_bit);
+            let mut max_bit = bit_index;
+            for consumed in 0..usize::from(signal.bit_len) {
+                max_bit = max_bit.max(bit_index);
+                if consumed + 1 < usize::from(signal.bit_len) {
+                    bit_index = next_big_endian_bit(bit_index).ok_or_else(|| {
+                        format!("signal {} has an invalid big-endian bit layout", signal.name)
+                    })?;
+                }
+            }
+            max_bit
+        }
+    };
+
+    let max_bytes = usize::from(message_dlc);
+    if max_bit / 8 >= max_bytes {
+        return Err(format!(
+            "signal {} exceeds declared message DLC {}",
+            signal.name, message_dlc
+        ));
+    }
+
+    Ok(())
+}
+
+fn next_big_endian_bit(bit_index: usize) -> Option<usize> {
+    if bit_index % 8 == 0 {
+        bit_index.checked_add(15)
+    } else {
+        bit_index.checked_sub(1)
     }
 }
