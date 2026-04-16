@@ -77,6 +77,20 @@ TEST(CANSchemaTest, RejectsDBCWithoutMessages) {
     EXPECT_STREQ(schema.lastError(), "failed to create can_schema handle");
 }
 
+TEST(CANSchemaTest, RejectsSignalsThatExceedMessageDLC) {
+    CANSchema schema;
+    const char* dbc =
+        "VERSION \"1.0\"\n\n"
+        "NS_ :\n\n"
+        "BS_:\n\n"
+        "BU_: ECM\n\n"
+        "BO_ 1 Msg : 8 ECM\n"
+        " SG_ Bad : 63|2@1+ (1,0) [0|3] \"\" ECM\n";
+
+    EXPECT_FALSE(schema.loadDBCText(dbc));
+    EXPECT_FALSE(schema.hasSchema());
+}
+
 TEST(CANSchemaTest, AcceptsNonUtf8DBCBytes) {
     CANSchema schema;
     std::vector<uint8_t> dbc = {

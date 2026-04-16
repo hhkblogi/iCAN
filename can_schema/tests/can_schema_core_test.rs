@@ -19,6 +19,18 @@ BO_ 291 DemoB : 8 ECM
  SG_ Temp : 0|8@1+ (1,0) [0|255] "C" ECM
 "#;
 
+const OUT_OF_RANGE_SIGNAL_DBC: &str = r#"VERSION "1.0"
+
+NS_ :
+
+BS_:
+
+BU_: ECM
+
+BO_ 1 Msg : 8 ECM
+ SG_ Bad : 63|2@1+ (1,0) [0|3] "" ECM
+"#;
+
 const NO_MESSAGE_DBC: &str = r#"VERSION "1.0"
 
 NS_ :
@@ -106,6 +118,12 @@ fn supports_basic_multiplexed_signal_definitions() {
 #[test]
 fn rejects_duplicate_message_ids_during_runtime_compile() {
     let result = SchemaState::load_dbc_text(DUPLICATE_MESSAGE_DBC.as_bytes());
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_signals_that_exceed_declared_message_dlc() {
+    let result = SchemaState::load_dbc_text(OUT_OF_RANGE_SIGNAL_DBC.as_bytes());
     assert!(result.is_err());
 }
 
