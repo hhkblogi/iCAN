@@ -4,11 +4,18 @@ An iPadOS app for monitoring and testing CAN bus hardware via USB adapters, buil
 
 ## Supported Hardware
 
-| Protocol | Adapters |
-|---|---|
-| SLCAN | Any serial CAN adapter using the SLCAN/LAWICEL text protocol (e.g. CANable, SH-C31G) |
-| gs_usb | candleLight, CANtact, and other gs_usb-compatible devices |
-| PCAN-USB | PEAK PCAN-USB Pro FD |
+| Protocol | USB VID | Adapters | App Store | Development |
+|---|---|---|---|---|
+| SLCAN | `0x16D0` | CANable, SH-C31G, and other SLCAN/LAWICEL serial adapters | ✅ Supported | ✅ Supported |
+| gs_usb | `0x1D50` | candleLight, CANtact, and other gs_usb-compatible devices | ❌ Not supported | ✅ Supported |
+| PCAN-USB | `0x0C72` | PEAK PCAN-USB Pro FD | ❌ Not supported | ✅ Supported |
+
+DriverKit on iPadOS requires Apple to approve each USB Vendor ID for App Store
+distribution. Only VID `0x16D0` is currently approved — the App Store build
+of iCAN will only bind to SLCAN adapters. Development builds sign the dext
+with entitlements that include all three VIDs (see
+`usb_can_driver/USBCANDriver.entitlements`), so gs_usb and PCAN-USB adapters
+continue to work when sideloaded onto your own iPad.
 
 ## Features
 
