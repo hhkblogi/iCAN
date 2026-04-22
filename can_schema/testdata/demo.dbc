@@ -1,0 +1,35 @@
+VERSION "1.0"
+
+NS_ :
+
+BS_:
+
+BU_: ECM
+
+BO_ 291 Demo : 8 ECM
+ SG_ Speed : 0|16@1+ (1,0) [0|65535] "km/h" ECM
+ SG_ Temp : 16|8@1- (0.5,-40) [-40|87.5] "C" ECM
+
+BO_ 512 Battery : 8 ECM
+ SG_ Voltage : 0|16@1+ (0.01,0) [0|655.35] "V" ECM
+ SG_ Current : 16|16@1- (0.1,0) [-3276.8|3276.7] "A" ECM
+
+BO_ 419385573 ExtStatus : 8 ECM
+ SG_ Mode : 0|8@1+ (1,0) [0|255] "" ECM
+VAL_ 419385573 Mode 0 "Idle" 7 "Active";
+
+BO_ 600 MultiStatus : 8 ECM
+ SG_ Page M : 0|8@1+ (1,0) [0|255] "" ECM
+ SG_ DriveSpeed m0 : 8|8@1+ (1,0) [0|255] "km/h" ECM
+ SG_ CoolantTemp m1 : 8|8@1+ (1,0) [0|255] "C" ECM
+VAL_ 600 Page 0 "Drive" 1 "Thermal";
+
+BO_ 700 Empty : 8 ECM
+
+BO_ 800 FloatStatus : 8 ECM
+ SG_ Ratio : 0|32@1+ (1,0) [0|0] "" ECM
+SIG_VALTYPE_ 800 Ratio : 1;
+
+BO_ 801 DoubleStatus : 8 ECM
+ SG_ Precision : 0|64@1+ (1,0) [0|0] "" ECM
+SIG_VALTYPE_ 801 Precision : 2;

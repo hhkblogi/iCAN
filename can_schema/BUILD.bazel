@@ -1,0 +1,118 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library", "rust_test")
+load("@rules_swift//swift:swift.bzl", "swift_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "include/can_schema_ffi.h",
+    "cc/can_schema.h",
+    "cc/can_schema.cc",
+    "src/compile.rs",
+    "src/decode.rs",
+    "src/ir.rs",
+    "src/lib.rs",
+    "src/parser.rs",
+    "src/runtime.rs",
+    "src/status.rs",
+    "src/ffi.rs",
+    "testdata/demo.dbc",
+    "tests/can_schema_core_test.rs",
+    "tests/can_schema_ffi_test.rs",
+    "tests/can_schema_test.cpp",
+    "tests/CanSchemaSwiftTestBridgingHeader.h",
+    "tests/CanSchemaSwiftTests.swift",
+])
+
+rust_library(
+    name = "can_schema_core",
+    srcs = [
+        "src/compile.rs",
+        "src/decode.rs",
+        "src/ir.rs",
+        "src/lib.rs",
+        "src/parser.rs",
+        "src/runtime.rs",
+        "src/status.rs",
+    ],
+    crate_name = "can_schema",
+    edition = "2021",
+)
+
+rust_test(
+    name = "can_schema_core_test",
+    srcs = ["tests/can_schema_core_test.rs"],
+    crate_name = "can_schema_core_test",
+    edition = "2021",
+    data = ["testdata/demo.dbc"],
+    deps = [":can_schema_core"],
+)
+
+rust_test(
+    name = "can_schema_ffi_test",
+    srcs = [
+        "src/ffi.rs",
+        "tests/can_schema_ffi_test.rs",
+    ],
+    crate_name = "can_schema_ffi_test",
+    crate_root = "tests/can_schema_ffi_test.rs",
+    edition = "2021",
+    data = ["testdata/demo.dbc"],
+    deps = [":can_schema_core"],
+)
+
+rust_static_library(
+    name = "can_schema_ffi",
+    srcs = ["src/ffi.rs"],
+    crate_name = "ican_schema_ffi",
+    edition = "2021",
+    deps = [":can_schema_core"],
+)
+
+cc_library(
+    name = "can_schema_cc",
+    srcs = ["cc/can_schema.cc"],
+    hdrs = [
+        "cc/can_schema.h",
+        "include/can_schema_ffi.h",
+    ],
+    includes = [
+        "cc",
+        "include",
+    ],
+    copts = ["-std=c++23"],
+    deps = [
+        ":can_schema_ffi",
+        "//protocol",
+    ],
+)
+
+alias(
+    name = "can_schema",
+    actual = ":can_schema_cc",
+)
+
+cc_test(
+    name = "can_schema_test",
+    srcs = ["tests/can_schema_test.cpp"],
+    copts = ["-std=c++23"],
+    data = ["testdata/demo.dbc"],
+    deps = [
+        ":can_schema_cc",
+        "@rules_cc//cc/runfiles",
+        "@googletest//:gtest_main",
+    ],
+)
+
+swift_test(
+    name = "can_schema_swift_test",
+    srcs = ["tests/CanSchemaSwiftTests.swift"],
+    copts = [
+        "-cxx-interoperability-mode=default",
+        "-import-objc-header",
+        "$(execpath tests/CanSchemaSwiftTestBridgingHeader.h)",
+    ],
+    data = ["testdata/demo.dbc"],
+    module_name = "CANSchemaSwiftTests",
+    swiftc_inputs = ["tests/CanSchemaSwiftTestBridgingHeader.h"],
+    deps = [":can_schema"],
+)
