@@ -136,7 +136,7 @@ bazel test //...                             # All tests
 - App bundle: `com.<TEAM>.iCAN`
 - Driver bundle: `com.<TEAM>.iCAN.driver`
 - The app requires the `com.apple.developer.driverkit.communicates-with-drivers` entitlement
-- The pre-commit hook in `.githooks/` prevents accidental Team ID and `.mobileprovision` commits
+- The pre-commit hook in `.githooks/` blocks `.mobileprovision`, local path, and username commits, and normalizes hardcoded Team IDs
 - `scripts/embed_dext.sh` is the Xcode post-build hook that builds the .dext via Bazel, embeds it into the app bundle, and re-signs
 
 ### Development vs Distribution Profiles

@@ -18,3 +18,9 @@ sh_binary(
     srcs = ["stream_ios_device_logs.sh"],
     visibility = ["//visibility:public"],
 )
+
+sh_test(
+    name = "check_private_paths_test",
+    srcs = ["check_private_paths_test.sh"],
+    data = ["check_private_paths.sh"],
+)
