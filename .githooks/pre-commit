@@ -4,7 +4,8 @@
 #
 # 1. Blocks commits of team_config.bzl (should be gitignored)
 # 2. Blocks commits of .mobileprovision files
-# 3. Normalizes hardcoded team IDs in .pbxproj files
+# 3. Blocks staged local absolute paths and usernames
+# 4. Normalizes hardcoded team IDs in .pbxproj files
 
 set -euo pipefail
 
@@ -20,6 +21,10 @@ if git diff --cached --name-only | grep -q '\.mobileprovision$'; then
     echo "error: .mobileprovision files must not be committed" >&2
     exit 1
 fi
+
+# --- Block local absolute paths and usernames ---
+repo_root="$(git rev-parse --show-toplevel)"
+"$repo_root/scripts/check_private_paths.sh" --cached
 
 # --- Normalize DEVELOPMENT_TEAM in pbxproj ---
 while IFS= read -r -d '' pbxproj; do
