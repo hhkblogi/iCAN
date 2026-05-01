@@ -13,6 +13,8 @@ struct iCANApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Keep these lifecycle markers at .error so short xctrace Logging captures
+        // in scripts/stream_ios_device_logs.sh can reliably see app-owned rows.
         os_log(.error, log: lifecycleLog, "iCAN lifecycle: launch")
     }
 

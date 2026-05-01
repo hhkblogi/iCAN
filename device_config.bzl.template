@@ -2,9 +2,12 @@
 # Copy this file to device_config.bzl and fill in your local development device.
 # device_config.bzl is gitignored and must not be committed.
 
-# Device name, CoreDevice UUID, UDID, or serial number accepted by devicectl.
-# Leave empty if you prefer passing --device or ICAN_DEVICE at runtime.
+# Human-readable device name used by xctrace's xcdevice resolver. devicectl can
+# also use this as a fallback if ICAN_DEVICE and ICAN_DEVICE_ID are empty.
 ICAN_DEVICE_NAME = ""
+
+# Device identifier accepted by devicectl, such as CoreDevice UUID, UDID, serial
+# number, or device name. Leave empty if you prefer passing --device at runtime.
 ICAN_DEVICE_ID = ""
 ICAN_DEVICE = ""
 

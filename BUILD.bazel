@@ -17,14 +17,14 @@ package(default_visibility = ["//visibility:public"])
 # Development Device CLI
 # =============================================================================
 
-sh_binary(
+alias(
     name = "deploy_ios_device",
-    srcs = ["//scripts:deploy_ios_device.sh"],
+    actual = "//scripts:deploy_ios_device",
 )
 
-sh_binary(
+alias(
     name = "stream_ios_device_logs",
-    srcs = ["//scripts:stream_ios_device_logs.sh"],
+    actual = "//scripts:stream_ios_device_logs",
 )
 
 # =============================================================================

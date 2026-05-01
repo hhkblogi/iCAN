@@ -86,7 +86,7 @@ read_bzl_string() {
 load_device_config() {
     local root="$1"
     local config="$root/device_config.bzl"
-    [[ -f "$config" ]] || return
+    [[ -f "$config" ]] || return 0
 
     local config_device config_destination
     config_device="$(read_bzl_string "$config" ICAN_DEVICE)"
@@ -104,6 +104,47 @@ load_device_config() {
     if [[ -z "$destination" && -n "$config_destination" ]]; then
         destination="$config_destination"
     fi
+}
+
+check_devicectl_json_outcome() {
+    local json_file="$1"
+    local action="$2"
+
+    python3 - "$json_file" "$action" <<'PY'
+import json
+import sys
+
+json_file = sys.argv[1]
+action = sys.argv[2]
+
+try:
+    with open(json_file, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+except Exception as exc:
+    print(f"error: {action} did not produce readable devicectl JSON: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+outcome = payload.get("info", {}).get("outcome")
+if outcome == "success":
+    sys.exit(0)
+
+message = None
+error = payload.get("error")
+if isinstance(error, dict):
+    user_info = error.get("userInfo")
+    if isinstance(user_info, dict):
+        localized = user_info.get("NSLocalizedDescription")
+        if isinstance(localized, dict):
+            message = localized.get("string")
+        elif isinstance(localized, str):
+            message = localized
+
+if message:
+    print(f"error: {action} failed: {message}", file=sys.stderr)
+else:
+    print(f"error: {action} failed: devicectl JSON outcome is {outcome!r}", file=sys.stderr)
+sys.exit(1)
+PY
 }
 
 resolve_app_path() {
@@ -143,6 +184,10 @@ resolve_app_path() {
 
 device="${ICAN_DEVICE:-}"
 destination="${ICAN_XCODE_DESTINATION:-}"
+destination_explicit=0
+if [[ -n "${ICAN_XCODE_DESTINATION:-}" ]]; then
+    destination_explicit=1
+fi
 project="${ICAN_XCODEPROJ:-ican.xcodeproj}"
 scheme="${ICAN_XCODE_SCHEME:-app_ios}"
 configuration="${ICAN_XCODE_CONFIGURATION:-Debug}"
@@ -165,11 +210,15 @@ while [[ $# -gt 0 ]]; do
         -d|--device)
             [[ $# -ge 2 ]] || die "$1 requires a value"
             device="$2"
+            if [[ "$destination_explicit" -eq 0 ]]; then
+                destination=""
+            fi
             shift 2
             ;;
         --destination)
             [[ $# -ge 2 ]] || die "$1 requires a value"
             destination="$2"
+            destination_explicit=1
             shift 2
             ;;
         --project)
@@ -211,6 +260,7 @@ while [[ $# -gt 0 ]]; do
         --install-only)
             build=0
             install=1
+            launch=0
             shift
             ;;
         --no-launch)
@@ -231,7 +281,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list-devices)
             xcrun devicectl list devices
-            exit 0
+            exit
             ;;
         -h|--help)
             usage
@@ -295,6 +345,12 @@ if [[ "$launch" -eq 1 ]]; then
     )
     if [[ "$console" -eq 1 ]]; then
         launch_args+=(--console)
+    else
+        tmpdir="${TMPDIR:-/tmp}"
+        tmpdir="${tmpdir%/}"
+        launch_json="$(mktemp "$tmpdir/ican-devicectl-launch-json.XXXXXX")"
+        launch_log="$(mktemp "$tmpdir/ican-devicectl-launch-log.XXXXXX")"
+        launch_args+=(--json-output "$launch_json")
     fi
     launch_args+=("$bundle_id")
     if [[ "${#app_args[@]}" -gt 0 ]]; then
@@ -302,5 +358,21 @@ if [[ "$launch" -eq 1 ]]; then
     fi
 
     printf 'Launching %s on selected device...\n' "$bundle_id"
-    "${launch_args[@]}"
+    if [[ "$console" -eq 1 ]]; then
+        "${launch_args[@]}"
+    else
+        if ! "${launch_args[@]}" >"$launch_log" 2>&1; then
+            cat "$launch_log" >&2
+            rm -f "$launch_json" "$launch_log"
+            die "devicectl launch failed."
+        fi
+        if [[ -s "$launch_log" ]]; then
+            cat "$launch_log"
+        fi
+        if ! check_devicectl_json_outcome "$launch_json" "devicectl launch"; then
+            rm -f "$launch_json" "$launch_log"
+            exit 1
+        fi
+        rm -f "$launch_json" "$launch_log"
+    fi
 fi

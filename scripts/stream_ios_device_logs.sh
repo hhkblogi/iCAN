@@ -60,6 +60,10 @@ workspace_root() {
     cd "$script_dir/.." && pwd
 }
 
+is_id_like() {
+    [[ "$1" =~ ^[A-Fa-f0-9-]{24,}$ ]]
+}
+
 read_bzl_string() {
     local file="$1"
     local key="$2"
@@ -80,7 +84,7 @@ read_bzl_string() {
 load_device_config() {
     local root="$1"
     local config="$root/device_config.bzl"
-    [[ -f "$config" ]] || return
+    [[ -f "$config" ]] || return 0
 
     local config_device_name
     config_device_name="$(read_bzl_string "$config" ICAN_DEVICE_NAME)"
@@ -114,7 +118,7 @@ resolve_xctrace_device() {
         return
     fi
 
-    [[ -n "$device_name" ]] || die "xctrace backend requires ICAN_DEVICE_NAME, ICAN_DEVICE_UDID, or --udid."
+    [[ -n "$device_name" ]] || die "xctrace backend requires --device <name>, ICAN_DEVICE_NAME, ICAN_DEVICE_UDID, or --udid."
 
     local tmpdir
     tmpdir="${TMPDIR:-/tmp}"
@@ -122,7 +126,10 @@ resolve_xctrace_device() {
 
     local devices_json
     devices_json="$(mktemp "$tmpdir/ican-xcdevice.XXXXXX")"
-    xcrun xcdevice list --timeout=5 >"$devices_json"
+    trap 'rm -f "$devices_json"; trap - RETURN' RETURN
+    if ! xcrun xcdevice list --timeout=5 >"$devices_json"; then
+        die "xcrun xcdevice list failed while resolving the selected device for xctrace."
+    fi
 
     ICAN_XCTRACE_DEVICE_NAME="$device_name" python3 - "$devices_json" <<'PY'
 import json
@@ -177,6 +184,11 @@ while [[ $# -gt 0 ]]; do
         -d|--device)
             [[ $# -ge 2 ]] || die "$1 requires a value"
             device="$2"
+            if is_id_like "$device"; then
+                device_name=""
+            else
+                device_name="$device"
+            fi
             shift 2
             ;;
         --udid)
@@ -232,7 +244,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list-devices)
             xcrun devicectl list devices
-            exit 0
+            exit
             ;;
         -h|--help)
             usage
@@ -263,7 +275,7 @@ fi
 if [[ "$backend" == "idevicesyslog" ]]; then
     [[ -n "$device_udid" ]] || die "idevicesyslog requires --udid or ICAN_DEVICE_UDID. CoreDevice UUIDs from ICAN_DEVICE/ICAN_DEVICE_ID are not accepted by libimobiledevice. Run idevice_id -l to find the UDID."
 elif [[ "$backend" == "xctrace" ]]; then
-    [[ -n "$device_name" || -n "$device_udid" ]] || die "xctrace requires ICAN_DEVICE_NAME, ICAN_DEVICE_UDID, or --udid."
+    [[ -n "$device_name" || -n "$device_udid" ]] || die "xctrace requires --device <name>, ICAN_DEVICE_NAME, ICAN_DEVICE_UDID, or --udid."
 else
     [[ -n "$device" ]] || die "Pass --device or ICAN_DEVICE. Use --list-devices to inspect devices."
 fi
@@ -333,7 +345,13 @@ case "$backend" in
         printf 'Exported native os-log XML to %s\n' "$xctrace_export"
         if [[ -n "$filter_pattern" ]]; then
             printf 'Matching exported logs with pattern: %s\n' "$filter_pattern"
-            grep -E "$filter_pattern" "$xctrace_export" || true
+            set +e
+            grep -E "$filter_pattern" "$xctrace_export"
+            grep_status=$?
+            set -e
+            if [[ "$grep_status" -gt 1 ]]; then
+                die "failed to evaluate --filter regex against exported logs."
+            fi
         fi
         ;;
     *)

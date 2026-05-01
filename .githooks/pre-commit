@@ -29,7 +29,16 @@ while IFS= read -r -d '' pbxproj; do
 
     if grep -q 'DEVELOPMENT_TEAM = ' "$tmpfile" && grep -v '\$(DEVELOPMENT_TEAM)' "$tmpfile" | grep -q 'DEVELOPMENT_TEAM = '; then
         echo "Normalizing DEVELOPMENT_TEAM to variable in $pbxproj"
-        sed 's/DEVELOPMENT_TEAM = "[^$][^"]*";/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g; s/DEVELOPMENT_TEAM = [^"$][^";]*;/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g' "$tmpfile" > "$tmpfile.new" && mv "$tmpfile.new" "$tmpfile"
+        if ! sed 's/DEVELOPMENT_TEAM = "[^$][^"]*";/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g; s/DEVELOPMENT_TEAM = [^"$][^";]*;/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g' "$tmpfile" > "$tmpfile.new"; then
+            echo "Error: failed to normalize DEVELOPMENT_TEAM in $pbxproj" >&2
+            rm -f "$tmpfile" "$tmpfile.new"
+            exit 1
+        fi
+        if ! mv "$tmpfile.new" "$tmpfile"; then
+            echo "Error: failed to update temporary file for $pbxproj" >&2
+            rm -f "$tmpfile" "$tmpfile.new"
+            exit 1
+        fi
         modified=true
     fi
 
