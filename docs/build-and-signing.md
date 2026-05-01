@@ -47,6 +47,70 @@ bazel run //:xcodeproj    # generate/update Xcode project
 open ican.xcodeproj       # open in Xcode, select app_ios scheme, Cmd+R
 ```
 
+## Path 1B: CLI Device Development Loop
+
+**Used for:** agent-driven build/install/launch checks on a real iPad while keeping
+the generated Xcode project as the build source of truth.
+
+```
+You run: bazel run //:deploy_ios_device -- --device <device-name-or-id>
+        |
+scripts/deploy_ios_device.sh runs xcodebuild against ican.xcodeproj/app_ios
+        |
+The same Xcode post-build hook runs scripts/embed_dext.sh
+        |
+devicectl installs the built .app on the selected device
+        |
+devicectl launches com.hhkblogi.ican
+```
+
+**Commands:**
+```bash
+bazel run //:xcodeproj
+bazel run //:deploy_ios_device
+bazel run //:stream_ios_device_logs
+bazel run //:deploy_ios_device -- --device <device-name-or-id>
+bazel run //:deploy_ios_device -- --device <device-name-or-id> --no-launch
+bazel run //:stream_ios_device_logs -- --device <device-name-or-id>
+bazel run //:stream_ios_device_logs -- --backend xctrace --time-limit 15s
+bazel run //:stream_ios_device_logs -- --backend xctrace --log-output-dir /tmp/ican-logs
+bazel run //:stream_ios_device_logs -- --backend idevicesyslog --udid <device-udid>
+```
+
+Copy `device_config.bzl.template` to `device_config.bzl` and set `ICAN_DEVICE`
+or `ICAN_DEVICE_ID` to avoid repeating `--device`. If using the optional
+`idevicesyslog` backend, also set `ICAN_DEVICE_UDID` to the value printed by
+`idevice_id -l`. The native `xctrace` backend can derive the UDID from
+`ICAN_DEVICE_NAME` using `xcdevice`, so it does not require libimobiledevice.
+It still requires Xcode/CoreDevice to show the physical device as connected,
+which may require unlocking/trusting the device or opening it in Xcode/Console.
+`device_config.bzl` is gitignored and is read by the wrapper scripts at runtime,
+not by Bazel analysis, so local device names, IDs, UDIDs, or serial numbers are
+not committed or injected into Bazel target arguments.
+
+The log target defaults to `devicectl device process launch --console`, which is
+available with Xcode's built-in tools and is suitable for stdout/stderr launch
+loops. To capture native Apple unified logs without third-party tools, run
+`--backend xctrace --time-limit 15s`; this records an Instruments Logging trace,
+exports the `os-log` table, and prints matching app-focused rows by default.
+The default filter highlights the `app_ios` process plus iCAN-specific log
+categories such as `Lifecycle`, `CANConnection`, `SLCAN`, and `Dashboard`.
+The app emits `Lifecycle` markers on launch and scene phase changes, so a plain
+CLI launch produces an iCAN-owned log row before any adapter UI action. Pass
+`--filter 'com\.hhkblogi\.ican'` when you intentionally want broader system
+install/launch rows that mention the app bundle ID. Use `--log-output-dir` or
+`ICAN_LOG_OUTPUT_DIR` to place the default `.trace` bundle and exported XML
+somewhere other than `/tmp`. To stream device syslog via libimobiledevice,
+install `idevicesyslog` and run
+`--backend idevicesyslog --udid <device-udid>`. CoreDevice UUIDs used by
+`devicectl` are not interchangeable with libimobiledevice UDIDs; use
+`idevice_id -l` to discover the UDID once the device is visible over usbmux.
+
+`//:deploy_ios_device` passes `-quiet` to `xcodebuild` by default to keep agent
+logs readable and avoid dumping local environment details. Pass
+`--verbose-build` or set `ICAN_XCODEBUILD_VERBOSE=1` when debugging Xcode build
+internals.
+
 ## Path 2: Bazel App Store Build
 
 **Used for:** App Store and TestFlight submission via Transporter.
@@ -151,3 +215,5 @@ If Transporter fails with `"Invalid Code Signing Entitlements"` (ITMS-90163):
 | `//:app_ios_appstore_with_dext` | Distribution app + dext (for Transporter upload) |
 | `//usb_can_driver:USBCANDriver` | Standalone .dext build |
 | `//:xcodeproj` | Generate Xcode project |
+| `//:deploy_ios_device` | Build/install/launch the generated Xcode dev app on a real device |
+| `//:stream_ios_device_logs` | Launch with devicectl console attached, or use an optional log backend |

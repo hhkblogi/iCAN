@@ -2,15 +2,15 @@
 # Pre-commit hook: Prevent accidental commits of sensitive local config
 # Activated by scripts/setup.sh (git config core.hooksPath .githooks)
 #
-# 1. Blocks commits of team_config.bzl (should be gitignored)
+# 1. Blocks commits of local config .bzl files (should be gitignored)
 # 2. Blocks commits of .mobileprovision files
 # 3. Normalizes hardcoded team IDs in .pbxproj files
 
 set -euo pipefail
 
-# --- Block team_config.bzl ---
-if git diff --cached --name-only | grep -q 'team_config\.bzl$'; then
-    echo "error: team_config.bzl must not be committed (contains local team ID)" >&2
+# --- Block local config .bzl files ---
+if git diff --cached --name-only | grep -Eq '(team_config|device_config)\.bzl$'; then
+    echo "error: local config .bzl files must not be committed" >&2
     echo "       Add it to .gitignore if not already present." >&2
     exit 1
 fi
@@ -29,7 +29,16 @@ while IFS= read -r -d '' pbxproj; do
 
     if grep -q 'DEVELOPMENT_TEAM = ' "$tmpfile" && grep -v '\$(DEVELOPMENT_TEAM)' "$tmpfile" | grep -q 'DEVELOPMENT_TEAM = '; then
         echo "Normalizing DEVELOPMENT_TEAM to variable in $pbxproj"
-        sed 's/DEVELOPMENT_TEAM = "[^$][^"]*";/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g; s/DEVELOPMENT_TEAM = [^"$][^";]*;/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g' "$tmpfile" > "$tmpfile.new" && mv "$tmpfile.new" "$tmpfile"
+        if ! sed 's/DEVELOPMENT_TEAM = "[^$][^"]*";/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g; s/DEVELOPMENT_TEAM = [^"$][^";]*;/DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";/g' "$tmpfile" > "$tmpfile.new"; then
+            echo "Error: failed to normalize DEVELOPMENT_TEAM in $pbxproj" >&2
+            rm -f "$tmpfile" "$tmpfile.new"
+            exit 1
+        fi
+        if ! mv "$tmpfile.new" "$tmpfile"; then
+            echo "Error: failed to update temporary file for $pbxproj" >&2
+            rm -f "$tmpfile" "$tmpfile.new"
+            exit 1
+        fi
         modified=true
     fi
 

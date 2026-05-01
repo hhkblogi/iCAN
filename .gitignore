@@ -28,6 +28,7 @@ Packages/
 
 # Local settings (contains DEVELOPMENT_TEAM, etc.)
 team_config.bzl
+device_config.bzl
 *.mobileprovision
 
 # Claude Code

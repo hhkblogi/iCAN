@@ -1,4 +1,20 @@
 exports_files(
-    ["find_profile.sh"],
+    [
+        "deploy_ios_device.sh",
+        "find_profile.sh",
+        "stream_ios_device_logs.sh",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "deploy_ios_device",
+    srcs = ["deploy_ios_device.sh"],
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "stream_ios_device_logs",
+    srcs = ["stream_ios_device_logs.sh"],
     visibility = ["//visibility:public"],
 )
