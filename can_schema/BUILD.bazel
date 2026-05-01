@@ -35,14 +35,14 @@ rust_library(
         "src/status.rs",
     ],
     crate_name = "can_schema",
-    edition = "2021",
+    edition = "2024",
 )
 
 rust_test(
     name = "can_schema_core_test",
     srcs = ["tests/can_schema_core_test.rs"],
     crate_name = "can_schema_core_test",
-    edition = "2021",
+    edition = "2024",
     data = ["testdata/demo.dbc"],
     deps = [":can_schema_core"],
 )
@@ -55,7 +55,7 @@ rust_test(
     ],
     crate_name = "can_schema_ffi_test",
     crate_root = "tests/can_schema_ffi_test.rs",
-    edition = "2021",
+    edition = "2024",
     data = ["testdata/demo.dbc"],
     deps = [":can_schema_core"],
 )
@@ -64,7 +64,7 @@ rust_static_library(
     name = "can_schema_ffi",
     srcs = ["src/ffi.rs"],
     crate_name = "ican_schema_ffi",
-    edition = "2021",
+    edition = "2024",
     deps = [":can_schema_core"],
 )
 
