@@ -7,12 +7,27 @@ module(
 
 # Apple build rules
 bazel_dep(name = "rules_apple", version = "4.3.3")
-bazel_dep(name = "rules_swift", version = "3.1.1")
-bazel_dep(name = "apple_support", version = "1.23.1")
-bazel_dep(name = "rules_cc", version = "0.1.2")
+bazel_dep(name = "rules_rust", version = "0.67.0")
+bazel_dep(name = "rules_swift", version = "3.5.0")
+bazel_dep(name = "apple_support", version = "1.24.2")
+bazel_dep(name = "rules_cc", version = "0.2.14")
 
 # Xcode project generation
 bazel_dep(name = "rules_xcodeproj", version = "3.6.0")
 
 # Test framework
-bazel_dep(name = "googletest", version = "1.15.2")
+bazel_dep(name = "googletest", version = "1.17.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.88.0"],
+    extra_target_triples = [
+        "aarch64-apple-ios",
+        "aarch64-apple-ios-sim",
+        "x86_64-apple-ios",
+    ],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
