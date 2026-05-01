@@ -1,0 +1,20 @@
+# Local device configuration
+# Copy this file to device_config.bzl and fill in your local development device.
+# device_config.bzl is gitignored and must not be committed.
+
+# Device name, CoreDevice UUID, UDID, or serial number accepted by devicectl.
+# Leave empty if you prefer passing --device or ICAN_DEVICE at runtime.
+ICAN_DEVICE_NAME = ""
+ICAN_DEVICE_ID = ""
+ICAN_DEVICE = ""
+
+# Optional device UDID for idevicesyslog or xctrace.
+# `idevice_id -l` prints this value when the device is visible over usbmux.
+# The xctrace backend can also derive this from ICAN_DEVICE_NAME via xcdevice.
+ICAN_DEVICE_UDID = ""
+
+# Optional explicit xcodebuild destination, for example:
+#   platform=iOS,name=<device-name>
+#   id=<device-id>
+# Leave empty to let scripts/deploy_ios_device.sh derive it from ICAN_DEVICE.
+ICAN_XCODE_DESTINATION = ""

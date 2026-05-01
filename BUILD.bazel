@@ -14,6 +14,20 @@ load("//:appstore.bzl", "appstore_targets")
 package(default_visibility = ["//visibility:public"])
 
 # =============================================================================
+# Development Device CLI
+# =============================================================================
+
+sh_binary(
+    name = "deploy_ios_device",
+    srcs = ["//scripts:deploy_ios_device.sh"],
+)
+
+sh_binary(
+    name = "stream_ios_device_logs",
+    srcs = ["//scripts:stream_ios_device_logs.sh"],
+)
+
+# =============================================================================
 # Xcode Project Generation
 # =============================================================================
 

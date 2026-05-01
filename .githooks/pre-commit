@@ -2,15 +2,15 @@
 # Pre-commit hook: Prevent accidental commits of sensitive local config
 # Activated by scripts/setup.sh (git config core.hooksPath .githooks)
 #
-# 1. Blocks commits of team_config.bzl (should be gitignored)
+# 1. Blocks commits of local config .bzl files (should be gitignored)
 # 2. Blocks commits of .mobileprovision files
 # 3. Normalizes hardcoded team IDs in .pbxproj files
 
 set -euo pipefail
 
-# --- Block team_config.bzl ---
-if git diff --cached --name-only | grep -q 'team_config\.bzl$'; then
-    echo "error: team_config.bzl must not be committed (contains local team ID)" >&2
+# --- Block local config .bzl files ---
+if git diff --cached --name-only | grep -Eq '(team_config|device_config)\.bzl$'; then
+    echo "error: local config .bzl files must not be committed" >&2
     echo "       Add it to .gitignore if not already present." >&2
     exit 1
 fi
